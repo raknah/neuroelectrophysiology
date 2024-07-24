@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mepextract"
+description = "A quick way to extract MEPs from continuous data"
+version = "0.1.0"
+readme = "README.md"
+authors = [
+    { name = "Aswinshankar Sivalingam", email = "shankar.01@icloud.com" }
+]
+dependencies = [
+    "numpy",
+    "open-ephys-python-tools",
+]
