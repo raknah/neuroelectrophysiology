@@ -3,12 +3,15 @@ import os
 import json
 import pickle
 from open_ephys.analysis import Session
+from matplotlib import pyplot as plt
+from scipy.signal import find_peaks
 
 
 class Extractor:
-    def __init__(self, master_folder, trial, pre=10, post=100, sampling_rate=30000):
+    def __init__(self, master_folder, trial, group, pre=10, post=100, sampling_rate=30000):
         self.master_folder = master_folder
         self.trial = trial
+        self.group = group
         self.sampling_rate = sampling_rate
         self.pre_stimulus = (pre*(10**(-3)))*30000
         self.post_stimulus = (post*(10**(-3)))*30000
@@ -26,6 +29,7 @@ class Extractor:
         self.raw_data = None
         self.events = None
         self.mep = None
+        self.detected_peaks = None
 
     # getter and setter for sampling_rate
     @property
@@ -138,3 +142,106 @@ class Extractor:
         self.mep = final_data
         self._save_object(final_data, 'processed_data', 'pkl')
         return np.array(data)
+
+    def plot(self, recording_channels, peak_parameters):
+
+        if not isinstance(recording_channels, list):
+            return "Error: please enter the recording channels as a list"
+
+        if not isinstance(peak_parameters, dict):
+            return '''
+                    Error: please enter the desired peak parameters as a dictionary in the following format
+                     {'height':, 'threshold':, 'distance':,  'prominence':, 'width':, 'wlen':, 'rel_height':, 'plateau_size': }
+                    '''
+
+        self.detected_peaks = []
+
+        recording_channels = [channel + 1 for channel in recording_channels]
+
+        search = {
+            'height': None,
+            'threshold': None,
+            'distance': None,
+            'prominence': None,
+            'width': None,
+            'wlen': None,
+            'rel_height': None,
+            'plateau_size': None
+        }
+
+        search.update(peak_parameters)
+
+        # calculating mean and std
+        mean_data = np.mean(self.mep[recording_channels, :, :], axis=2)
+        std_data = np.std(self.mep[recording_channels, :, :], axis=2)
+
+        # plotting parameters
+        plt.figure(figsize=(7, 1), dpi=210)
+        time_axis = np.arange(mean_data.shape[1]) * (1000 / 30000)
+        tick_positions = np.arange(0, np.max(time_axis), 10)
+
+        for channel_index in len(recording_channels):
+
+            # plot mean and error bars
+            upper_bound = mean_data[channel_index] + std_data[channel_index]
+            lower_bound = mean_data[channel_index] - std_data[channel_index]
+
+            plt.fill_between(time_axis, upper_bound, lower_bound, alpha=0.3, label=f'Channel {recording_channels[channel_index]}')
+            plt.plot(time_axis, mean_data[channel_index], label=f'Channel {recording_channels[channel_index]}')
+
+            # find peaks and plot
+            positive_peaks, positive_properties = find_peaks(
+                mean_data[channel_index],
+                height=search['height'],
+                width=search['width'],
+                distance=search['distance'],
+                threshold=search['threshold'],
+                prominence=search['prominence'],
+                wlen=search['wlen'],
+                rel_height=search['rel_height'],
+                plateau_size=['plateau_size']
+            )
+            negative_peaks, negative_properties = find_peaks(
+                -mean_data[channel_index],
+                height=search['height'],
+                width=search['width'],
+                distance=search['distance'],
+                threshold=search['threshold'],
+                prominence=search['prominence'],
+                wlen=search['wlen'],
+                rel_height=search['rel_height'],
+                plateau_size=['plateau_size']
+            )
+
+            for peak in range(len(positive_peaks)):
+                if positive_peaks[peak] > 300:
+                    self.detected_peaks.append((self.group, positive_peaks[peak], positive_properties['peak_heights'][peak]))
+
+            for peak in range(len(negative_peaks)):
+                if negative_peaks[peak] > 300:
+                    self.detected_peaks.append((self.group, negative_peaks[peak], negative_properties['peak_heights'][peak]))
+
+            plt.plot(
+                positive_peaks * (1000/self.sampling_rate),
+                mean_data[channel_index][positive_peaks],
+                "X",
+                label='Positive Peaks',
+                color="green",
+                ms=21
+            )
+            plt.plot(
+                negative_peaks * (1000/self.sampling_rate),
+                -mean_data[channel_index][negative_peaks],
+                "X",
+                label='Negative Peaks',
+                color="red",
+                ms=21
+            )
+
+            # plot aesthetics
+        plt.xlabel('Time (ms)')
+        plt.ylabel('Amplitude ($\mu$V)')
+        plt.xticks(tick_positions)
+        plt.ylim(-500, 500)
+        plt.title(self.trial)
+        plt.savefig(self.path_for_extracted)
