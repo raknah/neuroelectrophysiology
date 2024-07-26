@@ -60,8 +60,6 @@ Loads the raw data from the specified directories and computes the data length.
 
 **self.mep**: extracted MEPs
 
-**self.events**
-
 ## License
 This project is licensed under the MIT License.
 
