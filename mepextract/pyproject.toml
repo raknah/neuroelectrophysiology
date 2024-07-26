@@ -13,4 +13,6 @@ authors = [
 dependencies = [
     "numpy",
     "open-ephys-python-tools",
+    "matplotlib",
+    "scipy"
 ]
