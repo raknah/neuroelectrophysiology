@@ -117,7 +117,7 @@ class Extractor:
 
         # check if an event is ongoing at the end of the channel
         if is_event:
-            events[event_number] = (event_start, len(event_channel_data - 1))  # handle the final ongoing event
+            events[event_number] = (event_start, range(len(event_channel_data - 1)))  # handle the final ongoing event
 
         self.events = events
         self._save_object(events, 'extracted_events', 'json')
