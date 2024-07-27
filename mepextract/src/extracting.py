@@ -180,7 +180,7 @@ class Extractor:
         time_axis = np.arange(mean_data.shape[1]) * (1000 / 30000)
         tick_positions = np.arange(0, np.max(time_axis), 10)
 
-        for channel_index in len(recording_channels):
+        for channel_index in range(len(recording_channels)):
 
             # plot mean and error bars
             upper_bound = mean_data[channel_index] + std_data[channel_index]
