@@ -30,7 +30,7 @@ class Extractor:
         self.raw_data = None
         self.events = None
         self.mep = None
-        self.detected_peaks = None
+        self.detected_peaks = {}
 
     # getter and setter for sampling_rate
     @property
@@ -160,7 +160,8 @@ class Extractor:
                      {'height':, 'threshold':, 'distance':,  'prominence':, 'width':, 'wlen':, 'rel_height':, 'plateau_size': }
                     '''
 
-        self.detected_peaks = []
+        if self.group not in self.detected_peaks:
+            self.detected_peaks[self.group] = []
 
         recording_channels = [channel + 1 for channel in recording_channels]
 
@@ -221,11 +222,11 @@ class Extractor:
 
             for peak in range(len(positive_peaks)):
                 if positive_peaks[peak] > 300:
-                    self.detected_peaks.append((self.group, positive_peaks[peak], positive_properties['peak_heights'][peak]))
+                    self.detected_peaks[self.group].append((int(positive_peaks[peak]), int(positive_properties['peak_heights'][peak])))
 
             for peak in range(len(negative_peaks)):
                 if negative_peaks[peak] > 300:
-                    self.detected_peaks.append((self.group, negative_peaks[peak], negative_properties['peak_heights'][peak]))
+                    self.detected_peaks[self.group].append((int(negative_peaks[peak]), int(negative_properties['peak_heights'][peak])))
 
             plt.plot(
                 positive_peaks * (1000/self.sampling_rate),
@@ -257,4 +258,4 @@ class Extractor:
         if show:
             plt.show()
         else:
-            plt.clf()
+            plt.close()
