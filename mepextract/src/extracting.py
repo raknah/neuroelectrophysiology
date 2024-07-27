@@ -143,7 +143,7 @@ class Extractor:
         self._save_object(final_data, 'processed_data', 'pkl')
         return np.array(data)
 
-    def plot(self, recording_channels, peak_parameters):
+    def plot(self, recording_channels, peak_parameters, show=False, amplitude_range=500, size=(3, 1)):
 
         if not isinstance(recording_channels, list):
             return "Error: please enter the recording channels as a list"
@@ -165,7 +165,7 @@ class Extractor:
             'prominence': None,
             'width': None,
             'wlen': None,
-            'rel_height': None,
+            'rel_height': 0.5,
             'plateau_size': None
         }
 
@@ -176,7 +176,7 @@ class Extractor:
         std_data = np.std(self.mep[recording_channels, :, :], axis=2)
 
         # plotting parameters
-        plt.figure(figsize=(7, 1), dpi=210)
+        plt.figure(figsize=size, dpi=210)
         time_axis = np.arange(mean_data.shape[1]) * (1000 / 30000)
         tick_positions = np.arange(0, np.max(time_axis), 10)
 
@@ -199,7 +199,7 @@ class Extractor:
                 prominence=search['prominence'],
                 wlen=search['wlen'],
                 rel_height=search['rel_height'],
-                plateau_size=['plateau_size']
+                plateau_size=search['plateau_size']
             )
             negative_peaks, negative_properties = find_peaks(
                 -mean_data[channel_index],
@@ -210,7 +210,7 @@ class Extractor:
                 prominence=search['prominence'],
                 wlen=search['wlen'],
                 rel_height=search['rel_height'],
-                plateau_size=['plateau_size']
+                plateau_size=search['plateau_size']
             )
 
             for peak in range(len(positive_peaks)):
@@ -227,7 +227,7 @@ class Extractor:
                 "X",
                 label='Positive Peaks',
                 color="green",
-                ms=21
+                ms=11
             )
             plt.plot(
                 negative_peaks * (1000/self.sampling_rate),
@@ -235,13 +235,17 @@ class Extractor:
                 "X",
                 label='Negative Peaks',
                 color="red",
-                ms=21
+                ms=11
             )
 
             # plot aesthetics
         plt.xlabel('Time (ms)')
         plt.ylabel('Amplitude ($\mu$V)')
         plt.xticks(tick_positions)
-        plt.ylim(-500, 500)
+        plt.ylim(-amplitude_range, amplitude_range)
         plt.title(self.trial)
         plt.savefig(self.path_for_extracted)
+
+        if show:
+            plt.show()
+
