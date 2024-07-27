@@ -5,6 +5,7 @@ import pickle
 from open_ephys.analysis import Session
 from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
+import scipy.io
 
 
 class Extractor:
@@ -77,8 +78,12 @@ class Extractor:
             full_path = os.path.join(path, file_name)
             with open(full_path, 'w') as f:
                 json.dump(object, f)
+        elif type == 'mat':
+            file_name = name + ".mat"
+            full_path = os.path.join(path, file_name)
+            scipy.io.savemat(full_path, {name: object})
         else:
-            raise ValueError("Unsupported file type. Please use 'pkl' or 'json'.")
+            raise ValueError("Unsupported file type. Please use 'pkl', 'json' ot 'mat.")
 
     # extract raw data
     def extract_raw(self):
@@ -141,6 +146,7 @@ class Extractor:
         final_data = np.array(data)
         self.mep = final_data
         self._save_object(final_data, 'processed_data', 'pkl')
+        self._save_object(final_data, 'processed_data', 'mat')
         return np.array(data)
 
     def plot(self, recording_channels, peak_parameters, show=False, amplitude_range=500, size=(3, 1)):
@@ -244,8 +250,11 @@ class Extractor:
         plt.xticks(tick_positions)
         plt.ylim(-amplitude_range, amplitude_range)
         plt.title(self.trial)
-        plt.savefig(self.path_for_extracted)
+        plt.savefig(os.path.join(self.path_for_extracted, "extracted plot"))
+
+        self._save_object(self.detected_peaks, 'detected_peaks', 'json')
 
         if show:
             plt.show()
-
+        else:
+            plt.clf()
