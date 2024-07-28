@@ -14,5 +14,6 @@ dependencies = [
     "numpy",
     "open-ephys-python-tools",
     "matplotlib",
-    "scipy"
+    "scipy",
+    "pandas",
 ]
