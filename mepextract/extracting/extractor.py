@@ -11,9 +11,9 @@ import scipy.io
 
 
 class Extractor:
-    def __init__(self, master_folder, trial, group, recording_channels, pre=10, post=100, sampling_rate=30000):
+    def __init__(self, master_folder, trial, group, recording_channels, log=False, pre=10, post=100, sampling_rate=30000):
 
-        self.logger = self._configure_logger()
+        self.log = log
         self.master_folder = master_folder
         self.trial = trial
         self.group = group
@@ -41,9 +41,11 @@ class Extractor:
         self.notes = pd.core.series.Series()
 
         # log
-        self.logger.info(f'Extractor initialized for trial {self.trial} in group {self.group} with'
-                         f' {self.sampling_rate}Hz, {pre}ms pre-stimulus, {post}ms post-stimulus, '
-                         f'{self.num_channels} channels and {self.recording_channels} recording channels')
+        if self.log:
+            self.logger = self._configure_logger()
+            self.logger.info(f'Extractor initialized for trial {self.trial} in group {self.group} with'
+                             f' {self.sampling_rate}Hz, {pre}ms pre-stimulus, {post}ms post-stimulus, '
+                             f'{self.num_channels} channels and {self.recording_channels} recording channels')
 
     # logger
 
@@ -102,7 +104,8 @@ class Extractor:
         if value < 0:
             raise ValueError("Post-stimulus time cannot be negative")
         self._post_stimulus = value
-        logging.info(f'Post-stimulus time set to {value}')
+        if self.log:
+            logging.info(f'Post-stimulus time set to {value}')
 
     # getter and setter for number of channels
     @property
@@ -114,7 +117,8 @@ class Extractor:
         if value < 0:
             raise ValueError("Number of channels cannot be negative")
         self._num_channels = value
-        logging.info(f'Number of channels set to {value}')
+        if self.log:
+            logging.info(f'Number of channels set to {value}')
 
     @property
     def notes(self):
@@ -191,15 +195,18 @@ class Extractor:
             sample_numbers = np.load(self.path_to_sample_numbers)
             self.data_length = sample_numbers.max() - sample_numbers.min()
             # load raw data
-            self.logger.info(f'{self.trial} extracting raw data...')
+            if self.log:
+                self.logger.info(f'{self.trial} extracting raw data...')
             session = Session(self.path_to_raw_data)
             recording = session.recordnodes[0].recordings[0]
             self.raw_data = recording.continuous[0].get_samples(start_sample_index=0, end_sample_index=self.data_length)
         except FileNotFoundError as e:
-            self.logger.error(f"File not found: {e}")
+            if self.log:
+                self.logger.error(f"File not found: {e}")
             raise
         except Exception as e:
-            self.logger.error(f"Error extracting raw data: {e}")
+            if self.log:
+                self.logger.error(f"Error extracting raw data: {e}")
             raise
 
     def plot_raw(self, channels, export=True):
@@ -225,7 +232,8 @@ class Extractor:
 
         fig, ax = plt.subplots(len(channels), 1, figsize=(21, (len(channels) - 1) * 3), sharex=True)
 
-        self.logger.info(f'{self.trial} plotting raw data...')
+        if self.log:
+            self.logger.info(f'{self.trial} plotting raw data...')
         for i in range(len(channels)):
             channel_data = self.raw_data[:, i]
 
@@ -286,11 +294,12 @@ class Extractor:
         if above_threshold[-1]:
             event_end_indices = np.append(event_end_indices, len(event_channel_data) - 1)
 
-        events = {i + 1: (start, end) for i, (start, end) in enumerate(zip(event_start_indices, event_end_indices))}
+        events = {i + 1: (int(start), int(end)) for i, (start, end) in enumerate(zip(event_start_indices, event_end_indices))}
 
         self.events = events
 
-        self.logger.info(f'{self.trial} extracting event locations...')
+        if self.log:
+            self.logger.info(f'{self.trial} extracting event locations...')
 
         if export:
             self._save_object(events, 'extracted_events', 'json')
@@ -319,7 +328,8 @@ class Extractor:
 
         data = []
 
-        self.logger.info(f'{self.trial} extracting event data...')
+        if self.log:
+            self.logger.info(f'{self.trial} extracting event data...')
         for channel in range(0, 16):
             extracted_data = []
             for event_number, (start, end) in self.events.items():
@@ -373,7 +383,8 @@ class Extractor:
         time_axis = np.arange(mean_data.shape[1]) * (1000 / self.sampling_rate)
         tick_positions = np.arange(0, np.max(time_axis), 10)
 
-        self.logger.info(f'{self.trial} plotting extracted data...')
+        if self.log:
+            self.logger.info(f'{self.trial} plotting extracted data...')
         for channel_index in range(len(channels)):
             # plot mean and error bars
             upper_bound = mean_data[channel_index] + std_data[channel_index]
@@ -458,7 +469,8 @@ class Extractor:
                                  label=f'Channel {recording_channels[channel_index]}')
                 plt.plot(time_axis, mean_data[channel_index], label=f'Channel {recording_channels[channel_index]}')
 
-            self.logger.info(f'{self.trial} finding peaks for channel {recording_channels[channel_index]}...')
+            if self.log:
+                self.logger.info(f'{self.trial} finding peaks for channel {recording_channels[channel_index]}...')
             # find peaks and plot
             positive_peaks, positive_properties = find_peaks(
                 mean_data[channel_index],
@@ -578,7 +590,8 @@ class Extractor:
         with open(full_path, 'wb') as f:
             pickle.dump(self, f)
 
-        self.logger.info(f"Instance saved as {file_name} (excluding raw_data)")
+        if self.log:
+            self.logger.info(f"Instance saved as {file_name} (excluding raw_data)")
 
         self.raw_data = raw_data_backup  # Restore raw_data
 

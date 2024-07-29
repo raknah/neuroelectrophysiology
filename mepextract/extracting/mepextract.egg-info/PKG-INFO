@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: mepextract
-Version: 1.0.0
+Version: 1.0.1
 Summary: A quick way to extract MEPs from continuous data
 Author-email: Aswinshankar Sivalingam <shankar.01@icloud.com>
 License: MIT
@@ -75,6 +75,14 @@ extractor.plot_event_average(channels=[1, 2, 3], amplitude_range=500)
 # find and plot MEPs with specified peak parameters
 peak_parameters = {'height': 0.5, 'distance': 10}
 detected_peaks = extractor.find_meps(peak_parameters=peak_parameters)
+
+# executes all of the above in one line
+lazy(self, event_channel: int, peak_parameters: dict, export=True, plot=False, show=True)
+
+# saves the current instance of the Extractor class to a file, excluding the raw_data so as
+save_instance(self)
+
+
 ```
 
 
@@ -82,63 +90,52 @@ detected_peaks = extractor.find_meps(peak_parameters=peak_parameters)
 
 ### Properties
 
-**self.event_channel_number**: Pre-specified event channel.
-
-**self.data_length**: Length of data from sample_numbers.npy.
-
-**self.raw_data**: Extracted raw data.
-
-**self.events**: Extracted events (in samples).
-
-**self.mep**: Extracted MEPs.
-
 ```python
 init(self, master_folder, trial, group, recording_channels, pre=10, post=100, sampling_rate=30000)
-    master_folder: # Path to the master folder containing data.
-    trial: # Trial name.
-    group: # Group name.
-    recording_channels: # List of recording channels.
-    pre: # Pre-stimulus time in milliseconds (default: 10 ms).
-    post: # Post-stimulus time in milliseconds (default: 100 ms).
-    sampling_rate: # Sampling rate in Hz (default: 30000 Hz).
+    
+    master_folder: # path to the master folder containing data
+    trial: # trial name
+    group: # group name
+    recording_channels: # list of recording channels
+    pre: # pre-stimulus time in milliseconds (default: 10 ms)
+    post: # post-stimulus time in milliseconds (default: 100 ms)
+    sampling_rate: # sampling rate in Hz (default: 30000 Hz)
 
 ```
 
-### Terminology for Parameters
+`self.event_channel_number`: Pre-specified event channel.
 
+`self.data_length`: Length of data from sample_numbers.npy.
 
-**event_channel_number**: The channel number to use for event extraction.
+`self.raw_data`: Extracted raw data.
 
-**export**: Whether to save the plot to a file (default: True).
+`self.events`: Extracted events (in samples).
 
-**channels**: A list of channel numbers to include in the plot.
+`self.mep`: Extracted MEPs.
 
-**amplitude_range**: The range of amplitude for the plot.
+### Method parameters
 
-**save**: Whether to save the plot to a file (default: True).
+`event_channel_number`: The channel number to use for event extraction.
 
-**peak_parameters**: A dictionary containing parameters for peak detection.
+`export`: Whether to save the plot to a file (default: True).
 
-**plot**: Whether to plot the data (default: True).
+`channels`: A list of channel numbers to include in the plot.
 
-**show**: Whether to show the plots (default: False).
+`amplitude_range`: The range of amplitude for the plot.
+
+`save`: Whether to save the plot to a file (default: True).
+
+`peak_parameters`: A dictionary containing parameters for peak detection.
+
+`plot`: Whether to plot the data (default: True).
+
+`show`: Whether to show the plots (default: False).
 amplitude_range: The range of amplitude for the plot (default: 500).
 
-**size**: The size of the plot (default: (21, 7)).
-export: Whether to export the detected peaks (default: True).
+`size`: The size of the plot (default: (21, 7)).
 
-### Other Methods
+`export`: Whether to export the detected peaks (default: True).
 
-```python
-
-lazy(self, event_channel: int, peak_parameters: dict, export=True, plot=False, show=True)
-# Performs a series of data extraction and processing steps in a lazy manner.
-
-
-save_instance(self)
-# Saves the current instance of the Extractor class to a file, excluding the raw_data attribute.
-
-```
 ## License
 
 This project is licensed under the MIT License.
