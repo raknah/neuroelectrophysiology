@@ -52,7 +52,7 @@ class Extractor:
         logger.setLevel(logging.DEBUG)
 
         # Create handlers
-        fh = logging.FileHandler('extractor.log')
+        fh = logging.FileHandler(os.path.join(self.master_folder, 'extractor.log'))
         fh.setLevel(logging.DEBUG)
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)

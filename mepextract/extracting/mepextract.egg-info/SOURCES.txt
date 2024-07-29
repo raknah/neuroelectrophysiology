@@ -1,0 +1,8 @@
+LICENSE.txt
+README.md
+pyproject.toml
+extracting/mepextract.egg-info/PKG-INFO
+extracting/mepextract.egg-info/SOURCES.txt
+extracting/mepextract.egg-info/dependency_links.txt
+extracting/mepextract.egg-info/requires.txt
+extracting/mepextract.egg-info/top_level.txt
