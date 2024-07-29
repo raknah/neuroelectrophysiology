@@ -33,7 +33,7 @@ Data plotting: Provides functionality for plotting raw data and extracted MEPs.
 ### Example workflow:
 
 ```python
-from mepextract.src import Extractor
+from mepextract.extracting import Extractor
 
 # initialise Extractor
 extractor = Extractor(master_folder='path/to/master/folder', trial='trial_name', group='group_name', recording_channels=[1, 2, 3])
