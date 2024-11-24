@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mepextract"
-version = "1.0.1"
+version = "1.1.0"
 license = {text = "MIT"}
 description = "A quick way to extract MEPs from continuous data"
 authors = [

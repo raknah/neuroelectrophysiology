@@ -3,21 +3,20 @@ import pandas as pd
 import os
 import json
 import pickle
-import logging
 from open_ephys.analysis import Session
-from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
+from scipy.ndimage import gaussian_filter1d as gf
 import scipy.io
 
 
 class Extractor:
-    def __init__(self, master_folder, trial, group, recording_channels, log=False, pre=10, post=100, sampling_rate=30000):
+    def __init__(self, master_folder, trial, notes, recording_channels, pre=10, post=100, sampling_rate=30000):
 
-        self.log = log
         self.master_folder = master_folder
+        self.notes = notes
         self.trial = trial
-        self.group = group
         self.sampling_rate = sampling_rate
+        self.conversion = (1/sampling_rate)*1000
         self.pre_stimulus = (pre * (10 ** (-3))) * sampling_rate
         self.post_stimulus = (post * (10 ** (-3))) * sampling_rate
         self.num_channels = 16
@@ -36,39 +35,10 @@ class Extractor:
         self.data_length = None
         self.raw_data = None
         self.events = None
+        self.mep_matrix = None
         self.mep = None
         self.detected_peaks = {}
-        self.notes = pd.core.series.Series()
 
-        # log
-        if self.log:
-            self.logger = self._configure_logger()
-            self.logger.info(f'Extractor initialized for trial {self.trial} in group {self.group} with'
-                             f' {self.sampling_rate}Hz, {pre}ms pre-stimulus, {post}ms post-stimulus, '
-                             f'{self.num_channels} channels and {self.recording_channels} recording channels')
-
-    # logger
-
-    def _configure_logger(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.DEBUG)
-
-        # Create handlers
-        fh = logging.FileHandler(os.path.join(self.master_folder, 'extractor.log'))
-        fh.setLevel(logging.DEBUG)
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
-
-        # Create formatters and add them to handlers
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        # Add handlers to the logger
-        logger.addHandler(fh)
-        logger.addHandler(ch)
-
-        return logger
 
     # getter and setter for sampling_rate
     @property
@@ -92,7 +62,6 @@ class Extractor:
         if value < 0:
             raise ValueError("Pre-stimulus time cannot be negative")
         self._pre_stimulus = value
-        logging.info(f'Pre-stimulus time set to {value}')
 
     # getter and setter for post_stimulus
     @property
@@ -104,8 +73,6 @@ class Extractor:
         if value < 0:
             raise ValueError("Post-stimulus time cannot be negative")
         self._post_stimulus = value
-        if self.log:
-            logging.info(f'Post-stimulus time set to {value}')
 
     # getter and setter for number of channels
     @property
@@ -117,8 +84,6 @@ class Extractor:
         if value < 0:
             raise ValueError("Number of channels cannot be negative")
         self._num_channels = value
-        if self.log:
-            logging.info(f'Number of channels set to {value}')
 
     @property
     def notes(self):
@@ -130,7 +95,7 @@ class Extractor:
             raise ValueError("Notes must be a pandas series (pandas.core.series.Series)")
         self._notes = series
 
-    # save extracted objects
+    # (internal function) save extracted objects
     def _save_object(self, pyobject, name, datatype):
 
         """
@@ -194,63 +159,16 @@ class Extractor:
             # load sample numbers
             sample_numbers = np.load(self.path_to_sample_numbers)
             self.data_length = sample_numbers.max() - sample_numbers.min()
+
             # load raw data
-            if self.log:
-                self.logger.info(f'{self.trial} extracting raw data...')
             session = Session(self.path_to_raw_data)
             recording = session.recordnodes[0].recordings[0]
             self.raw_data = recording.continuous[0].get_samples(start_sample_index=0, end_sample_index=self.data_length)
+
         except FileNotFoundError as e:
-            if self.log:
-                self.logger.error(f"File not found: {e}")
             raise
         except Exception as e:
-            if self.log:
-                self.logger.error(f"Error extracting raw data: {e}")
             raise
-
-    def plot_raw(self, channels, export=True):
-
-        """
-        Plot the raw data for all channels.
-
-        This method generates a plot of the raw data for each channel, with time on the x-axis and amplitude on the y-axis.
-        Optionally, the plot can be saved to a file.
-
-        Parameters:
-            export (bool, optional): Whether to save the plot to a file. Default is True.
-
-        Returns:
-            None
-
-        Raises:
-            None
-        """
-
-        if channels is None:
-            channels = range(self.num_channels)
-
-        fig, ax = plt.subplots(len(channels), 1, figsize=(21, (len(channels) - 1) * 3), sharex=True)
-
-        if self.log:
-            self.logger.info(f'{self.trial} plotting raw data...')
-        for i in range(len(channels)):
-            channel_data = self.raw_data[:, i]
-
-            time_axis = [t for t in range(len(channel_data))]
-            ax[i].plot(time_axis, channel_data, color='red')
-            ax[i].set_title(f'Channel number {channels[i]}')
-            ax[i].set_xlabel('Time (Samples)')
-            ax[i].set_ylabel('Amplitude')
-
-        plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1, hspace=0.4, wspace=0.4)
-        fig.suptitle('Raw Data for all Channels')
-        plt.tight_layout(rect=[0, 0, 1, 0.97])
-
-        if export:
-            fig.savefig(os.path.join(self.path_for_extracted, 'raw_data_plot.png'))
-
-        plt.show()
 
     # event extraction function
     def extract_events(self, event_channel_number: int, export=True):
@@ -298,14 +216,10 @@ class Extractor:
 
         self.events = events
 
-        if self.log:
-            self.logger.info(f'{self.trial} extracting event locations...')
-
         if export:
             self._save_object(events, 'extracted_events', 'json')
 
         return events
-
 
     # extract MEPs
     def get_event_data(self, export=True):
@@ -328,8 +242,6 @@ class Extractor:
 
         data = []
 
-        if self.log:
-            self.logger.info(f'{self.trial} extracting event data...')
         for channel in range(0, 16):
             extracted_data = []
             for event_number, (start, end) in self.events.items():
@@ -341,71 +253,14 @@ class Extractor:
             data.append(np.vstack(extracted_data).T)
 
         final_data = np.array(data)
-        self.mep = final_data
+        self.mep_matrix = final_data
         if export:
             self._save_object(final_data, 'processed_data', 'pkl')
             self._save_object(final_data, 'processed_data', 'mat')
-        return np.array(data)
-
-    # plot averaged for a list of channels
-    def plot_event_average(self, channels: list, amplitude_range: int, save=True):
-
-        """
-        Plot the average motor evoked potentials (MEPs) for specified channels.
-
-        This method calculates the mean and standard deviation of the MEP data for the specified channels,
-        and plots the results with error bars. Optionally, the plot can be saved to a file.
-
-        Parameters:
-            channels (list): A list of channel numbers to include in the plot.
-            amplitude_range (int): The range of amplitude for the plot.
-            save (bool, optional): Whether to save the plot to a file. Default is True.
-
-        Returns:
-            None
-
-        Raises:
-            TypeError: If `channels` is not a list or `amplitude_range` is not an integer.
-        """
-
-        if not isinstance(channels, list):
-            raise TypeError('channels parameter must be a list of channels')
-
-        if not isinstance(amplitude_range, int):
-            raise TypeError('amplitude_range parameter must be an integer')
-
-        channels = [channel - 1 for channel in channels]
-
-        mean_data = np.mean(self.mep[channels, :, :], axis=2)
-        std_data = np.std(self.mep[channels, :, :], axis=2)
-
-        plt.figure(figsize=(21, 7), dpi=210)
-        time_axis = np.arange(mean_data.shape[1]) * (1000 / self.sampling_rate)
-        tick_positions = np.arange(0, np.max(time_axis), 10)
-
-        if self.log:
-            self.logger.info(f'{self.trial} plotting extracted data...')
-        for channel_index in range(len(channels)):
-            # plot mean and error bars
-            upper_bound = mean_data[channel_index] + std_data[channel_index]
-            lower_bound = mean_data[channel_index] - std_data[channel_index]
-
-            plt.fill_between(time_axis, upper_bound, lower_bound, alpha=0.3, label=f'Channel {channels[channel_index]}')
-            plt.plot(time_axis, mean_data[channel_index], label=f'Channel {channels[channel_index]}')
-
-        plt.xlabel('Time (ms)')
-        plt.ylabel('Amplitude ($\mu$V)')
-        plt.xticks(tick_positions)
-        plt.ylim(-amplitude_range, amplitude_range)
-        plt.title(self.trial)
-
-        if save:
-            plt.savefig(os.path.join(self.path_for_extracted, "raw plot"))
-
-        plt.show()
+        return final_data
 
     # find MEPs and plot if desired
-    def find_meps(self, peak_parameters: dict, plot=True, show=False, amplitude_range=500, size=(21, 7), export=True):
+    def find_meps(self, peak_parameters: dict, temporal_range: tuple):
         """
         Find motor evoked potentials (MEPs) based on specified peak parameters.
 
@@ -433,14 +288,12 @@ class Extractor:
 
         Returns:
             dict: A dictionary containing the detected peaks for each group.
+            :param temporal_range:
         """
 
         if not isinstance(peak_parameters, dict):
             raise TypeError('''please enter the desired peak parameters as a dictionary in the following format {
             'height':, 'threshold':, 'distance':,  'prominence':, 'width':, 'wlen':, 'rel_height':, 'plateau_size': } ''')
-
-        if self.group not in self.detected_peaks:
-            self.detected_peaks[self.group] = []
 
         recording_channels = [channel - 1 for channel in self.recording_channels]
 
@@ -449,28 +302,29 @@ class Extractor:
 
         search.update(peak_parameters)
 
-        # calculating mean and std
-        mean_data = np.mean(self.mep[recording_channels, :, :], axis=2)
-        std_data = np.std(self.mep[recording_channels, :, :], axis=2)
+        for channel in recording_channels:
 
-        # plotting parameters
-        plt.figure(figsize=size, dpi=210)
-        time_axis = np.arange(mean_data.shape[1]) * (1000 / self.sampling_rate)
-        tick_positions = np.arange(0, np.max(time_axis), 10)
+            temp = self.mep[channel, :, :]
 
-        for channel_index in range(len(recording_channels)):
+            # baseline correction
+            baseline = temp[:250, :].mean(axis=1).mean(axis=0)
+            correction = np.full((1, temp.shape[0]), baseline)
 
-            # plot mean and error bars
-            upper_bound = mean_data[channel_index] + std_data[channel_index]
-            lower_bound = mean_data[channel_index] - std_data[channel_index]
+            # mean
+            mean_events = (temp.mean(axis = 1)).flatten()
+            std_events = (temp.mean(axis = 1)).flatten()
 
-            if plot:
-                plt.fill_between(time_axis, upper_bound, lower_bound, alpha=0.3,
-                                 label=f'Channel {recording_channels[channel_index]}')
-                plt.plot(time_axis, mean_data[channel_index], label=f'Channel {recording_channels[channel_index]}')
+            # smoothing with gaussian kernel of width ~5 samples
+            smoothed_mean = gf(mean_events, sigma = 1.25)
+            smoothed_std = gf(std_events, sigma = 1.25)
 
-            if self.log:
-                self.logger.info(f'{self.trial} finding peaks for channel {recording_channels[channel_index]}...')
+            # standardised data
+            standardised = (smoothed_mean - smoothed_mean.mean())/smoothed_mean.std()
+
+            # scaling by current
+            standardised = (1/self.current)*standardised
+
+
             # find peaks and plot
             positive_peaks, positive_properties = find_peaks(
                 mean_data[channel_index],
@@ -496,50 +350,18 @@ class Extractor:
             )
 
             for peak in range(len(positive_peaks)):
-                if positive_peaks[peak] > 300:
+                if positive_peaks[peak] > self.pre_stimulus:
                     self.detected_peaks[self.group].append(
                         (int(positive_peaks[peak]), int(positive_properties['peak_heights'][peak])))
 
             for peak in range(len(negative_peaks)):
-                if negative_peaks[peak] > 300:
+                if negative_peaks[peak] > self.pre_stimulus:
                     self.detected_peaks[self.group].append(
                         (int(negative_peaks[peak]), int(negative_properties['peak_heights'][peak])))
 
-            if plot:
-                plt.plot(
-                    positive_peaks * (1000 / self.sampling_rate),
-                    mean_data[channel_index][positive_peaks],
-                    "X",
-                    label='Positive Peaks',
-                    color="green",
-                    ms=11
-                )
-                plt.plot(
-                    negative_peaks * (1000 / self.sampling_rate),
-                    -mean_data[channel_index][negative_peaks],
-                    "X",
-                    label='Negative Peaks',
-                    color="red",
-                    ms=11
-                )
-
-        # plot aesthetics
-        if plot:
-            plt.xlabel('Time (ms)')
-            plt.ylabel('Amplitude ($\mu$V)')
-            plt.xticks(tick_positions)
-            plt.ylim(-amplitude_range, amplitude_range)
-            plt.title(self.trial)
-
-        if plot and export:
-            plt.savefig(os.path.join(self.path_for_extracted, "extracted plot"))
-
         self._save_object(self.detected_peaks, 'detected_peaks', 'json')
 
-        if plot and show:
-            plt.show()
-        else:
-            plt.close()
+
 
         return self.detected_peaks
 
