@@ -8,16 +8,32 @@ from matplotlib import pyplot as plt
 from IPython.display import display
 
 def find_meps(data, search, threshold, time_in_ms, ax):
+    """
+    Find MEPs in the data using the search parameters provided.
+    :param data:
+    :param search:
+    :param threshold:
+    :param time_in_ms:
+    :param ax:
+    :return:
+    """
 
     delays = {'positive peaks': [], 'negative peaks': []}
+    def get_peaks(data, invert=False):
+        peak_data = -data if invert else data
+        return find_peaks(
+            peak_data,
+            height = search.get('height'),
+            threshold = search.get('threshold'),
+            prominence = search.get('prominence'),
+            distance = search.get('distance'),
+            width = search.get('width'),
+            plateau_size = search.get('plateau_size'),
+        )
 
-    pos_peaks, pos_parameters = find_peaks(
-        data,
-        height = search['height'],
-        distance = search['distance'],
-        width = search['width'])
-
-    neg_peaks, neg_parameters = find_peaks(-data, height = search['height'], distance = search['distance'], width = search['width'])
+    # extract positive and negative peaks
+    pos_peaks, _ = get_peaks(data)
+    neg_peaks, _ = get_peaks(data, invert=True)
 
     for peak in pos_peaks:
         if 330 < peak and data[peak] > threshold:
@@ -26,7 +42,7 @@ def find_meps(data, search, threshold, time_in_ms, ax):
             delays['positive peaks'].append((peak, amplitude))
 
     for peak in neg_peaks:
-        if 330 < peak < 500 and data[peak] < -0.1:
+        if 330 < peak and data[peak] < -threshold:
             ax.plot(time_in_ms[peak], data[peak], 'x', color='blue')
             amplitude = data[peak]
             delays['negative peaks'].append((peak, np.abs(amplitude)))
@@ -44,28 +60,38 @@ class Viewer:
         self.time_in_ms = np.arange(-300, 3000) * (1/self.sampling_rate * 1000)
         self.last_delays = None
 
-        # accepted trials
+        # classification
         self.accepted_indices = set()
-        self.accepted = None
+        self.unsure_indices = set()
+        self.rejected_indices = set()
 
-        # outputs
-        self.spreadsheet = None
+        # classified data
+        self.accepted = None
+        self.unsure = None
+        self.rejected = None
 
     def extract(self):
         self.accepted = [self.extracted[index] for index, _ in enumerate(self.extracted) if index in self.accepted_indices]
-        self.spreadsheet = pd.DataFrame([trial['notes'] for index, trial in enumerate(self.extracted) if index in self.accepted_indices])
-        return self.accepted, self.spreadsheet
+        self.unsure = [self.extracted[index] for index, _ in enumerate(self.extracted) if index in self.unsure_indices]
+        self.rejected = [self.extracted[index] for index, _ in enumerate(self.extracted) if index in self.rejected_indices]
 
-    def reset_accept(self):
+        return self.accepted, self.unsure, self.rejected, self.spreadsheet
+
+    def reset(self):
         self.accepted_indices = set()
         self.accepted = None
-        self.spreadsheet = None
+
+        self.unsure_indices = set()
+        self.unsure = None
+
+        self.rejected_indices = set()
+        self.rejected = None
         return print("Accepted Set Reset.")
 
     def plot_trial(self, trial_index, window, std=False, log=False, peak=False,
-                   threshold=None, height=None, distance=None, width=None):
+                   threshold=None, height=None, distance=None, width=None, prominence=None):
 
-        search = {'height': height, 'distance': distance, 'width': width}
+        search = {'height': height, 'distance': distance, 'width': width, 'prominence': prominence}
 
         fig, ax = plt.subplots(1, 1, figsize=(21, 10), dpi=210)
 
@@ -107,17 +133,24 @@ class Viewer:
                 mean_arrays.append(standardised)
                 std_arrays.append(np.ones_like(standardised))
                 if peak:
-                    delays['positive peaks'].append(find_meps(standardised, search, threshold, self.time_in_ms, ax)['positive peaks'])
-                    delays['negative peaks'].append(find_meps(standardised, search, threshold, self.time_in_ms, ax)['negative peaks'])
-
+                    for peak in find_meps(standardised, search, threshold, self.time_in_ms, ax)['positive peaks']:
+                        delay, amplitude = peak
+                        amplitude = smoothed_mean[delay]
+                        delays['positive peaks'].append((delay, amplitude))
+                    for peak in find_meps(standardised, search, threshold, self.time_in_ms, ax)['negative peaks']:
+                        delay, amplitude = peak
+                        amplitude = smoothed_mean[delay]
+                        delays['negative peaks'].append((delay, amplitude))
             else:
                 ax.plot(self.time_in_ms, smoothed_mean, label=f'Channel {channel}')
                 ax.fill_between(self.time_in_ms, smoothed_mean - smoothed_std, smoothed_mean + smoothed_std, alpha=0.5)
                 mean_arrays.append(smoothed_mean)
                 std_arrays.append(smoothed_std)
                 if peak:
-                    delays['positive peaks'].append(find_meps(smoothed_mean, search, threshold, self.time_in_ms, ax)['positive peaks'])
-                    delays['negative peaks'].append(find_meps(smoothed_mean, search, threshold, self.time_in_ms, ax)['negative peaks'])
+                    for peak in find_meps(smoothed_mean, search, threshold, self.time_in_ms, ax)['positive peaks']:
+                        delays['positive peaks'].append(peak)
+                    for peak in find_meps(smoothed_mean, search, threshold, self.time_in_ms, ax)['negative peaks']:
+                        delays['negative peaks'].append(peak)
 
         stacked_mean = np.vstack(mean_arrays)
         stacked_std = np.vstack(std_arrays)
@@ -150,12 +183,12 @@ class Viewer:
 
         return fig, delays
 
-    def accept_view(self):
+    def classifier(self):
 
         print_output = widgets.Output()
 
         # trial counter
-        index_slider = widgets.IntText(value=0, min=0, max=self.count-1, description="Trial:", layout=widgets.Layout(width='121px'))
+        index_slider = widgets.IntText(value=0, min=0, max=self.count-1, description="Trial:", layout=widgets.Layout(width='150px'))
 
         increment_button = widgets.Button(description="+", layout=widgets.Layout(width='75%'))
         decrement_button = widgets.Button(description="-", layout=widgets.Layout(width='75%'))
@@ -182,8 +215,9 @@ class Viewer:
 
         # accept/reject buttons
         accept_button = widgets.Button(description="Accept", button_style='success')
+        unsure_button = widgets.Button(description="Unsure", button_style='warning')
         reject_button = widgets.Button(description="Reject", button_style='danger')
-        accept_reject = widgets.HBox([accept_button, reject_button])
+        accept_reject = widgets.HBox([accept_button, unsure_button, reject_button])
 
         # plotting options
         std_checkbox = widgets.Checkbox(value=False, description='Standardised')
@@ -195,14 +229,19 @@ class Viewer:
         height_input = widgets.FloatText(value=0.1, description='Height', layout=widgets.Layout(width='150px'))
         distance_input = widgets.IntText(value=10, description='Distance', layout=widgets.Layout(width='150px'))
         width_input = widgets.IntText(value=10, description='Width', layout=widgets.Layout(width='150px'))
+        prominence_input = widgets.FloatText(value=0.1, description='Prominence', layout=widgets.Layout(width='150px'))
         threshold_input = widgets.FloatText(value=0.1, description='Threshold', layout=widgets.Layout(width='150px'))
         save_button = widgets.Button(description="Save Peaks", button_style='info', layout=widgets.Layout(width='210px'))
 
-        search_input = widgets.HBox([height_input, distance_input, width_input, threshold_input])
+        search_input = widgets.HBox([height_input, distance_input, width_input, prominence_input, threshold_input])
 
         def accept(b):
             current_index = index_slider.value
             with print_output:
+                if current_index in self.rejected_indices:
+                    self.rejected_indices.remove(current_index)
+                if current_index in self.unsure_indices:
+                    self.unsure_indices.remove(current_index)
                 if current_index not in self.accepted_indices:
                     self.accepted_indices.add(current_index)
                     print(f"Trial {current_index} accepted")
@@ -213,7 +252,29 @@ class Viewer:
         def reject(b):
             current_index = index_slider.value
             with print_output:
-                print(f"Trial {current_index} rejected")
+                if current_index in self.accepted_indices:
+                    self.accepted_indices.remove(current_index)
+                if current_index in self.unsure_indices:
+                    self.unsure_indices.remove(current_index)
+                if current_index not in self.rejected_indices:
+                    self.rejected_indices.add(current_index)
+                    print(f"Trial {current_index} rejected")
+                else:
+                    print(f"Trial {current_index} is already rejected")
+            index_slider.value += 1
+
+        def unsure(b):
+            current_index = index_slider.value
+            with print_output:
+                if current_index in self.accepted_indices:
+                    self.accepted_indices.remove(current_index)
+                if current_index in self.rejected_indices:
+                    self.rejected_indices.remove(current_index)
+                if current_index not in self.unsure_indices:
+                    self.unsure_indices.add(current_index)
+                    print(f"Trial {current_index} marked as unsure")
+                else:
+                    print(f"Trial {current_index} is already marked as unsure")
             index_slider.value += 1
 
         def save_peaks(b):
@@ -223,11 +284,12 @@ class Viewer:
                 if self.last_delays is not None:
                     self.extracted[current_index]['positive peaks'] = self.last_delays['positive peaks']
                     self.extracted[current_index]['negative peaks'] = self.last_delays['negative peaks']
-                    print(f"Peaks saved for index: {current_index} session: {name}\n- Positive Peaks: {self.last_delays['positive peaks']} \n- Negative Peaks: {self.last_delays['negative peaks']}")
+                    print(f"Trial {current_index} Session: {name}\n- Positive Peaks: {self.last_delays['positive peaks']} \n- Negative Peaks: {self.last_delays['negative peaks']}")
                 else:
                     print("No peaks to save")
 
         accept_button.on_click(accept)
+        unsure_button.on_click(unsure)
         reject_button.on_click(reject)
         save_button.on_click(save_peaks)
 
@@ -240,7 +302,8 @@ class Viewer:
             'threshold': threshold_input,
             'height': height_input,
             'distance': distance_input,
-            'width': width_input
+            'width': width_input,
+            'prominence': prominence_input
         })
 
         output.layout = widgets.Layout(width='95%', height='1000')
@@ -252,6 +315,6 @@ class Viewer:
         spacer = widgets.HTML("<br>")
 
         # display the layout
+        display(print_output)
         display(widgets_top, spacer, output, spacer, widgets_bottom)
 
-        display(print_output)
