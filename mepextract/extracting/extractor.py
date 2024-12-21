@@ -218,4 +218,4 @@ class Extractor:
         self.extract_events(event_channel_number=event_channel, export=export, export_format=export_format)
         self.get_event_data(export=export, export_format=export_format)
 
-        return {'trial': self.trial, 'notes': self.notes, 'events': self.events, 'data': self.mep_matrix}
+        return {'trial': self.trial, 'notes': self.notes, 'data': self.mep_matrix}
