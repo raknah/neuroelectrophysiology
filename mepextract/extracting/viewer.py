@@ -75,7 +75,7 @@ class Viewer:
         self.unsure = [self.extracted[index] for index, _ in enumerate(self.extracted) if index in self.unsure_indices]
         self.rejected = [self.extracted[index] for index, _ in enumerate(self.extracted) if index in self.rejected_indices]
 
-        return self.accepted, self.unsure, self.rejected, self.spreadsheet
+        return self.accepted, self.unsure, self.rejected
 
     def reset(self):
         self.accepted_indices = set()
@@ -188,19 +188,13 @@ class Viewer:
         print_output = widgets.Output()
 
         # trial counter
-        index_slider = widgets.IntText(value=0, min=0, max=self.count-1, description="Trial:", layout=widgets.Layout(width='150px'))
-
-        increment_button = widgets.Button(description="+", layout=widgets.Layout(width='75%'))
-        decrement_button = widgets.Button(description="-", layout=widgets.Layout(width='75%'))
-
-        def increment(change):
-            index_slider.value += 1
-
-        def decrement(change):
-            index_slider.value -= 1
-
-        increment_button.on_click(increment)
-        decrement_button.on_click(decrement)
+        index_slider = widgets.IntText(
+            value=0,
+            min=0,
+            max=self.count-1,
+            description="Trial:",
+            layout=widgets.Layout(width='150px')
+        )
 
         # window slider
         window_slider = widgets.BoundedIntText(
@@ -208,10 +202,10 @@ class Viewer:
             min=-10,
             max=90,
             step=1,
-            description='Start',
+            description='Start:',
             layout=widgets.Layout(width='150px')
         )
-        sliders = widgets.HBox([index_slider, decrement_button, increment_button, window_slider])
+        sliders = widgets.HBox([index_slider, window_slider])
 
         # accept/reject buttons
         accept_button = widgets.Button(description="Accept", button_style='success')
@@ -284,7 +278,7 @@ class Viewer:
                 if self.last_delays is not None:
                     self.extracted[current_index]['positive peaks'] = self.last_delays['positive peaks']
                     self.extracted[current_index]['negative peaks'] = self.last_delays['negative peaks']
-                    print(f"Trial {current_index} Session: {name}\n- Positive Peaks: {self.last_delays['positive peaks']} \n- Negative Peaks: {self.last_delays['negative peaks']}")
+                    print(f"Trial {current_index} ({name})\n- Positive Peaks: {self.last_delays['positive peaks']} \n- Negative Peaks: {self.last_delays['negative peaks']}")
                 else:
                     print("No peaks to save")
 
@@ -309,8 +303,8 @@ class Viewer:
         output.layout = widgets.Layout(width='95%', height='1000')
 
         # arrange widgets horizontally
-        widgets_top = widgets.HBox([sliders, accept_reject, plot_checkboxes], layout=widgets.Layout(align_items='center'))
-        widgets_bottom = widgets.HBox([peak_checkbox, search_input, save_button], layout=widgets.Layout(align_items='center'))
+        widgets_top = widgets.HBox([sliders, accept_reject, plot_checkboxes])
+        widgets_bottom = widgets.HBox([peak_checkbox, search_input, save_button])
 
         spacer = widgets.HTML("<br>")
 
