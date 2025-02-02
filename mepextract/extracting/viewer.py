@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import ipywidgets as widgets
+from docutils.nodes import description
 
 from scipy.ndimage import gaussian_filter1d as gf
 from scipy.signal import find_peaks
@@ -88,7 +89,7 @@ class Viewer:
         self.rejected = None
         return print("Accepted Set Reset.")
 
-    def plot_trial(self, trial_index, window, std=False, log=False, peak=False,
+    def plot_trial(self, trial_index, window_start = -2, window_end = 10, std=False, x_log=False, y_log=False, peak=False,
                    threshold=None, height=None, distance=None, width=None, prominence=None):
 
         search = {'height': height, 'distance': distance, 'width': width, 'prominence': prominence}
@@ -162,12 +163,16 @@ class Viewer:
         ax.set_title(f'Trial {title}', fontsize=27)
         ax.set_xlabel('Time (ms)', fontsize=21)
 
-        if not log:
-            ax.set_xlim(window, window+12)
+        if not x_log:
+            ax.set_xlim(window_start, window_end)
 
-        if log:
+        if x_log:
             ax.set_xlabel('Log-Time', fontsize=21)
             ax.set_xscale('log')
+
+        if y_log:
+            ax.set_ylabel('Log-Amplitude', fontsize = 21)
+            ax.set_yscale('log')
 
         if std:
             ax.set_ylabel('Standardised Amplitude', fontsize=21)
@@ -197,7 +202,7 @@ class Viewer:
         )
 
         # window slider
-        window_slider = widgets.BoundedIntText(
+        window_start = widgets.BoundedIntText(
             value=-2,
             min=-10,
             max=90,
@@ -205,7 +210,17 @@ class Viewer:
             description='Start:',
             layout=widgets.Layout(width='150px')
         )
-        sliders = widgets.HBox([index_slider, window_slider])
+
+        window_end = widgets.BoundedIntText(
+            value = 10,
+            min = 0,
+            max = 100,
+            step = 1,
+            description = 'End:',
+            layout=widgets.Layout(width = '150px')
+        )
+
+        sliders = widgets.HBox([index_slider, window_start, window_end])
 
         # accept/reject buttons
         accept_button = widgets.Button(description="Accept", button_style='success')
@@ -215,8 +230,9 @@ class Viewer:
 
         # plotting options
         std_checkbox = widgets.Checkbox(value=False, description='Standardised')
-        log_checkbox = widgets.Checkbox(value=False, description='Log')
-        plot_checkboxes = widgets.HBox([std_checkbox, log_checkbox])
+        x_log_checkbox = widgets.Checkbox(value=False, description='x-log')
+        y_log_checkbox = widgets.Checkbox(value = False, description = 'y-log')
+        plot_checkboxes = widgets.HBox([std_checkbox, x_log_checkbox, y_log_checkbox])
 
         # peak finding options
         peak_checkbox = widgets.Checkbox(value=False, description='Find Peaks')
@@ -281,6 +297,7 @@ class Viewer:
                     print(f"Trial {current_index} ({name})\n- Positive Peaks: {self.last_delays['positive peaks']} \n- Negative Peaks: {self.last_delays['negative peaks']}")
                 else:
                     print("No peaks to save")
+            index_slider.value += 1
 
         accept_button.on_click(accept)
         unsure_button.on_click(unsure)
@@ -289,9 +306,11 @@ class Viewer:
 
         output = widgets.interactive_output(self.plot_trial, {
             'trial_index': index_slider,
-            'window': window_slider,
+            'window_start': window_start,
+            'window_end': window_end,
             'std': std_checkbox,
-            'log': log_checkbox,
+            'x_log': x_log_checkbox,
+            'y_log': y_log_checkbox,
             'peak': peak_checkbox,
             'threshold': threshold_input,
             'height': height_input,
