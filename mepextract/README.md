@@ -1,122 +1,92 @@
-# Motor Evoked Potentials (MEP) Extraction Package
+# Motor Evoked Potentials (MEP) Analysis Package
 
 ## Overview
+The **MEP Analysis** package (distributed as `mepextract`) provides tools for automated extraction, processing, and visualization of Motor Evoked Potentials (MEP) from electrophysiological recordings. Designed for scalability and flexibility, this package streamlines analysis workflows for large EEG datasets by offering:
 
-This Python package is designed to extract motor evoked potentials (MEPs) from Open Ephys data. It provides tools for loading raw electrophysiological data, detecting events, and extracting the corresponding MEPs for further analysis.
+- **Batch Processing**: Efficiently processes multiple trials with progress tracking.
+- **Signal Extraction**: Leverages custom extraction methods to isolate MEP signals.
+- **Visualization**: Utilizes high-quality plotting styles (integrating with `matplotlib` and `scienceplots`) to present analysis results.
 
-Please ensure you have the following packages installed:
-- numpy
-- pandas
-- open_ephys
-- matplotlib
-- scipy
-- json
-- pickle
-- logging
 
-You can install them using pip:
-
-``` bash
-pip install numpy pandas open_ephys matplotlib scipy json pickle logging
-```
+### Features
+- **Automated Trial Processing:** Loops through trials, skipping those marked for rejection.
+- **Data Compatibility:** Reads input data from CSV files using `pandas`.
+- **Custom Extraction Pipelines:** Uses the `Extractor` class to perform signal extraction.
+- **Interactive Visualization:** Uses the `Viewer` class to render detailed plots of extracted signals and perform peak detection.
+- **Modular Design:** Separates extraction (`extractor.py`) and visualization (`viewer.py`) into distinct modules for easy maintenance and extension.
 
 ## Usage
 
-The extracted events and MEP data are automatically saved in the specified directory in JSON, MAT, and Pickle formats, respectively.
+#### Import the Package
+```python
+from mepextract.extracting import Extractor, Viewer
+import pandas as pd
+import matplotlib.pyplot as plt
+```
 
-Load raw electrophysiological data: Reads raw data from specified directories.
-Event detection: Identifies events in the data based on a threshold.
-MEP extraction: Extracts MEPs surrounding detected events.
-Data saving: Saves extracted events and MEP data in JSON, MAT, and Pickle formats.
-Data plotting: Provides functionality for plotting raw data and extracted MEPs.
+#### Load Your MEP metadata
+The package expects information (saved as `Extractor.notes`) about sessions and trials (_session_name_, _phenotype_, _current level_, _stimulation type_) to be stored in a CSV file. Load this file using `pandas`:
 
-### Example workflow:
+```python
+data_file = "path/to/your/MICE_MEP_2024.csv"
+spreadsheet = pd.read_csv(data_file)
+```
+
+#### Process the Data
+Extract signals from trials that are valid by looping through the trials and using the `Extractor` class:
 
 ```python
 from mepextract.extracting import Extractor
 
-# initialise Extractor
-extractor = Extractor(master_folder='path/to/master/folder', trial='trial_name', group='group_name', recording_channels=[1, 2, 3])
+sampling_rate = 30000  # Define your sampling rate (Hz)
+all_extracted = []     # List to store extraction results
 
-# extract Raw Data
-extractor.extract_raw()
-
-# extract events
-events = extractor.extract_events(event_channel_number=1)
-
-# extract MEP data
-mep_data = extractor.get_event_data()
-
-# plot raw data
-extractor.plot_raw()
-
-# plot average MEPs for specified channels
-extractor.plot_event_average(channels=[1, 2, 3], amplitude_range=500)
-
-# find and plot MEPs with specified peak parameters
-peak_parameters = {'height': 0.5, 'distance': 10}
-detected_peaks = extractor.find_meps(peak_parameters=peak_parameters)
-
-# executes all of the above in one line
-lazy(self, event_channel: int, peak_parameters: dict, export=True, plot=False, show=True)
-
-# saves the current instance of the Extractor class to a file, excluding the raw_data so as
-save_instance(self)
-
-
+for i in range(len(spreadsheet)):
+    if spreadsheet["sessionType"][i] == "reject":
+        continue  # Skip trials marked as rejected
+    else:
+        extractor = Extractor(filepath=spreadsheet["filepath"][i],
+                              sampling_rate=sampling_rate)
+        extracted_data = extractor.extract_signal()
+        all_extracted.append(extracted_data)
+```
+```python
+# each entry in the list is a dictionary with the following keys
+all_extracted[0].keys()
 ```
 
+dict_keys(['trial', 'notes', 'events', 'data', 'event_mean', 'event_std'])
 
-## Methods and Properties
-
-### Properties
+#### Visualize an Extracted Signal
+Plot the extracted signal from the first valid trial:
 
 ```python
-init(self, master_folder, trial, group, recording_channels, pre=10, post=100, sampling_rate=30000)
-    
-    master_folder: # path to the master folder containing data
-    trial: # trial name
-    group: # group name
-    recording_channels: # list of recording channels
-    pre: # pre-stimulus time in milliseconds (default: 10 ms)
-    post: # post-stimulus time in milliseconds (default: 100 ms)
-    sampling_rate: # sampling rate in Hz (default: 30000 Hz)
+from mepextract.extracting import Viewer
+viewer = Viewer(extracted = extracted, sampling_rate=30000)
 
+# generate a GUI for peak detection and classification
+viewer.classifier() 
 ```
 
-`self.event_channel_number`: Pre-specified event channel.
+```python
+# create three lists based on classification (accepted, review and rejected) with the detected peaks appended
+viewer.extract() 
+accepted = viewer.accepted
+review = viewer.review
+rejected = viewer.rejected
+```
 
-`self.data_length`: Length of data from sample_numbers.npy.
+```python
+# each entry in the list is a dictionary with the following keys
+accepted[0].keys()
+```
+dict_keys(['trial', 'notes', 'events', 'data', 'event_mean', 'event_std', 'positive peaks', 'negative peaks'])
 
-`self.raw_data`: Extracted raw data.
-
-`self.events`: Extracted events (in samples).
-
-`self.mep`: Extracted MEPs.
-
-### Method parameters
-
-`event_channel_number`: The channel number to use for event extraction.
-
-`export`: Whether to save the plot to a file (default: True).
-
-`channels`: A list of channel numbers to include in the plot.
-
-`amplitude_range`: The range of amplitude for the plot.
-
-`save`: Whether to save the plot to a file (default: True).
-
-`peak_parameters`: A dictionary containing parameters for peak detection.
-
-`plot`: Whether to plot the data (default: True).
-
-`show`: Whether to show the plots (default: False).
-amplitude_range: The range of amplitude for the plot (default: 500).
-
-`size`: The size of the plot (default: (21, 7)).
-
-`export`: Whether to export the detected peaks (default: True).
 
 ## License
 
 This project is licensed under the MIT License.
+
+Acknowledgments
+
+Special thanks to Dr. Nikolas Perentos for providing the initial data and insight for the development of this package.
