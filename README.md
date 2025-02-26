@@ -87,6 +87,6 @@ dict_keys(['trial', 'notes', 'events', 'data', 'event_mean', 'event_std', 'posit
 
 This project is licensed under the MIT License.
 
-Acknowledgments
+## Acknowledgments
 
 Special thanks to Dr. Nikolas Perentos for providing the initial data and insight for the development of this package.
