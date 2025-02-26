@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 ```
 
 #### Load Your MEP metadata
-The package expects information (saved as `Extractor.notes`) about sessions and trials (_session_name_, _phenotype_, _current level_, _stimulation type_) to be stored in a CSV file. Load this file using `pandas`:
+The package expects information (saved as `notes` attribute of the `Extractor` class) about sessions and trials (_session_name_, _phenotype_, _current level_, _stimulation type_) to be stored in a CSV file. Load this file using `pandas`:
 
 ```python
 data_file = "path/to/your/MICE_MEP_2024.csv"
@@ -37,18 +37,31 @@ Extract signals from trials that are valid by looping through the trials and usi
 
 ```python
 from mepextract.extracting import Extractor
+sampling_rate = 30000
 
-sampling_rate = 30000  # Define your sampling rate (Hz)
-all_extracted = []     # List to store extraction results
+all_extracted = []
 
-for i in range(len(spreadsheet)):
-    if spreadsheet["sessionType"][i] == "reject":
-        continue  # Skip trials marked as rejected
+n = len(spreadsheet)
+for i in tqdm(range(0, n), desc="Processing trials"):
+    if spreadsheet['sessionType'][i] == 'reject':
+        continue
     else:
-        extractor = Extractor(filepath=spreadsheet["filepath"][i],
-                              sampling_rate=sampling_rate)
-        extracted_data = extractor.extract_signal()
-        all_extracted.append(extracted_data)
+        # relevant information
+        notes = spreadsheet.loc[i]
+
+        # defining extractor object
+        extractor = Extractor(
+            master_folder=master_folder,
+            notes=notes,
+            recording_channels=[5, 7],
+            sampling_rate=sampling_rate,
+            pre_stimulus_ms=10,
+            post_stimulus_ms=100)
+
+        # extracting relevant data
+        extracted = extractor.lazy(event_channel=13, export=True)
+
+        all_extracted.append(extracted)
 ```
 ```python
 # each entry in the list is a dictionary with the following keys
@@ -87,6 +100,6 @@ dict_keys(['trial', 'notes', 'events', 'data', 'event_mean', 'event_std', 'posit
 
 This project is licensed under the MIT License.
 
-Acknowledgments
+## Acknowledgments
 
 Special thanks to Dr. Nikolas Perentos for providing the initial data and insight for the development of this package.
