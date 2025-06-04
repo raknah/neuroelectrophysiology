@@ -1,11 +1,13 @@
 import numpy as np
+import pickle
+import os
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import zscore
 
 from .progress import TqdmProgressBar
 
 
-def remove_bad_channels(data, std=True, alpha=0.5, beta=0.5, cutoff_percentile=90):
+def remove_bad(data, std=True, alpha=0.5, beta=0.5, cutoff_percentile=90):
     """Remove outlier channels using a hybrid distance metric.
 
     Parameters
@@ -113,6 +115,7 @@ class Preprocessor:
     def __init__(
         self,
         trials,
+        destination=None,
         event_channel=None,
         remove_bad_channels=False,
         pre_stimulus_ms=10,
@@ -122,6 +125,7 @@ class Preprocessor:
         cutoff_percentile=90,
     ):
         self.trials = trials
+        self.destination = destination if destination else os.getcwd()
         self.event_channel = event_channel
         self.remove = remove_bad_channels
         self.pre_ms = pre_stimulus_ms
@@ -130,12 +134,12 @@ class Preprocessor:
         self.beta = beta
         self.cutoff = cutoff_percentile
 
-    def preprocess(self):
+    def preprocess(self, export=False):
         """Run preprocessing on all trials."""
 
         def process(trial):
             if self.remove:
-                cleaned, good = remove_bad_channels(
+                cleaned, good = remove_bad(
                     trial.data,
                     std=True,
                     alpha=self.alpha,
@@ -154,4 +158,9 @@ class Preprocessor:
 
         progress = TqdmProgressBar()
         progress.run(self.trials, label="Preprocessing", func=process)
+
+        if export:
+            with open(os.path.join(self.destination, "preprocessed_trials.pkl"), "wb") as f:
+                pickle.dump(self.trials, f)
+
         return self.trials
