@@ -1,165 +1,157 @@
-import os
 import numpy as np
-
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import zscore
 
 from .progress import TqdmProgressBar
 
 
-def remove_bad_channels(data, std, alpha, beta, cutoff_percentile = 90):
+def remove_bad_channels(data, std=True, alpha=0.5, beta=0.5, cutoff_percentile=90):
+    """Remove outlier channels using a hybrid distance metric.
 
+    Parameters
+    ----------
+    data : np.ndarray
+        Array of shape ``(channels, samples)``.
+    std : bool
+        Standardise channels before computing distances.
+    alpha : float
+        Weight for the Euclidean distance component.
+    beta : float
+        Weight for the correlation distance component.
+    cutoff_percentile : int
+        Percentile used to determine the distance threshold.
+
+    Returns
+    -------
+    tuple[np.ndarray, list[int]]
+        The cleaned data and the indices of channels retained.
     """
-    Removes bad channels based on a hybrid distance metric combining z-scored data,
-    pairwise Euclidean distance, and correlation distance.
+    temp = zscore(data, axis=1) if std else data
 
-    Parameters:
-        data (numpy.ndarray): 2D array of shape (n_channels, n_samples).
-        alpha (float): Weight for the Euclidean distance component.
-        beta (float): Weight for the correlation distance component.
-        cutoff_percentile (int): Percentile threshold for identifying bad channels.
+    euclidean = squareform(pdist(temp, metric="euclidean"))
+    if euclidean.max() != euclidean.min():
+        euclidean = (euclidean - euclidean.min()) / (euclidean.max() - euclidean.min())
 
-    Returns:
-        numpy.ndarray: 2D array of z-scored data with bad channels removed.
-    """
-
-    temp = data
-
-    if std:
-        temp = zscore(temp, axis = 1)
-
-    # pairwise distance (euclidean)
-    euclidean = squareform(pdist(temp, metric = 'euclidean'))
-    euclidean = (euclidean - euclidean.min()) / (euclidean.max() - euclidean.min())
-
-    # correlation
     corr = np.corrcoef(temp)
     corr_dist = 1 - np.abs(corr)
 
     hybrid = alpha * euclidean + beta * corr_dist
     np.fill_diagonal(hybrid, 1)
-    hybrid_mean = hybrid.mean(axis = 1)
+    hybrid_mean = hybrid.mean(axis=1)
 
     cutoff = np.percentile(hybrid_mean, cutoff_percentile)
     bad = np.where(hybrid_mean > cutoff)[0]
+    good = [i for i in range(data.shape[0]) if i not in bad]
 
-    print("Bad channel indices (relative to chs):", bad)
-    print("Mean distances: \n", hybrid)
-    print("Cutoff value:", cutoff)
+    return data[good, :], good
 
-    good = [i for i in range(6) if i not in bad]
 
-    return temp[good, :]
+def event_compiler(trial, event_channel_number, pre_stimulus_ms=10, post_stimulus_ms=100):
+    """Compile peri-event data from a ``Trial`` object.
 
-def event_compiler(trial, event_channel_number: int, export=True):
+    Parameters
+    ----------
+    trial : Trial
+        ``Trial`` instance containing ``data`` and ``sampling_rate``.
+    event_channel_number : int
+        One-based index of the channel used for event detection.
+    pre_stimulus_ms : int
+        Window length before each event in milliseconds.
+    post_stimulus_ms : int
+        Window length after each event in milliseconds.
+
+    Returns
+    -------
+    np.ndarray
+        Tensor of shape ``(n_events, n_channels, samples_per_event)``.
     """
-    Detect events in a specified channel, then extract peri‐event data across all recording channels,
-    returning a tensor of shape (n_events, n_channels, n_samples_per_event).
-
-    This method:
-        1. Checks that `event_channel_number` is a valid integer within channel range.
-        2. Thresholds the specified event channel at 0.5 to find event start/end indices.
-        3. Stores a dict of {event_index: (start_sample, end_sample)} in `self.events`.
-        4. For each detected event, extracts a window of raw data from
-           (start – pre_stimulus) to (start + post_stimulus) for every channel in `self.recording_channels`.
-        5. Assembles these windows into a NumPy array of shape
-           (n_events, n_channels, n_samples_per_event) and assigns it to `self.mep_matrix`.
-        6. Optionally exports both the event dictionary and the tensor via `self._save_object`.
-
-    Parameters:
-        event_channel_number (int):  One‐based index of the channel used for event detection.
-        export (bool, optional):    If True (default), save the detected‐events dict and data tensor.
-        export_format (str, optional):  File format for export; one of 'pkl', 'json', or 'mat'. Default is 'pkl'.
-
-    Returns:
-        numpy.ndarray:  A 3D array with shape (n_events, n_channels, n_samples_per_event).
-
-    Raises:
-        TypeError:  If `event_channel_number` is not an integer.
-        ValueError: If `event_channel_number` is outside the range [1, self.num_channels].
-    """
-    # --- Validate event_channel_number ---
     if not isinstance(event_channel_number, int):
-        raise TypeError("`event_channel_number` must be an integer")
-    if event_channel_number < 1 or event_channel_number > self.num_channels:
-        raise ValueError("`event_channel_number` must be within the valid range of channels")
+        raise TypeError("event_channel_number must be an integer")
 
-    # --- Detect event locations ---
-    data = self.raw_data
+    n_channels, n_samples = trial.data.shape
+    if event_channel_number < 1 or event_channel_number > n_channels:
+        raise ValueError("event_channel_number must be within channel range")
+
+    event_chan = trial.data[event_channel_number - 1]
     threshold = 0.5
-    # Convert one‐based channel index to zero‐based for slicing
-    event_chan_data = data[:, event_channel_number - 1]
-    above_thresh = event_chan_data >= threshold
+    above = event_chan >= threshold
+    diffs = np.diff(above.astype(int))
+    starts = np.where(diffs == 1)[0] + 1
+    ends = np.where(diffs == -1)[0]
 
-    # Find rising edges (event starts) and falling edges (event ends)
-    diffs = np.diff(above_thresh.astype(int))
-    event_start_indices = np.where(diffs == 1)[0] + 1
-    event_end_indices = np.where(diffs == -1)[0]
+    if above[0]:
+        starts = np.insert(starts, 0, 0)
+    if above[-1]:
+        ends = np.append(ends, len(event_chan) - 1)
 
-    # Handle case where signal is above threshold at the very beginning
-    if above_thresh[0]:
-        event_start_indices = np.insert(event_start_indices, 0, 0)
-    # Handle case where signal remains above threshold at the very end
-    if above_thresh[-1]:
-        event_end_indices = np.append(event_end_indices, len(event_chan_data) - 1)
+    events = {i + 1: (int(s), int(e)) for i, (s, e) in enumerate(zip(starts, ends))}
+    trial.events = events
 
-    # Map each event to its (start, end) sample indices
-    events = {
-        i + 1: (int(s), int(e))
-        for i, (s, e) in enumerate(zip(event_start_indices, event_end_indices))
-    }
-    self.events = events
+    pre = int(pre_stimulus_ms * trial.sampling_rate / 1000)
+    post = int(post_stimulus_ms * trial.sampling_rate / 1000)
+    samples_per_event = pre + post
+    event_tensor = np.zeros((len(starts), n_channels, samples_per_event))
 
-    # --- Extract peri‐event data for all recording channels ---
-    n_events = len(event_start_indices)
-    channels = self.recording_channels               # assumed zero‐based channel indices
-    n_channels = len(channels)
-    n_samples_per_event = int(self.pre_stimulus + self.post_stimulus)
+    for i, start in enumerate(starts):
+        start_actual = max(start - pre, 0)
+        end_actual = start + post
+        for j in range(n_channels):
+            segment = trial.data[j, start_actual:end_actual]
+            if len(segment) < samples_per_event:
+                padded = np.zeros(samples_per_event)
+                padded[:len(segment)] = segment
+                segment = padded
+            event_tensor[i, j, :] = segment[:samples_per_event]
 
-    # Preallocate tensor: (events, channels, samples)
-    event_tensor = np.zeros((n_events, n_channels, n_samples_per_event))
-
-    for i, (start, _) in enumerate(zip(event_start_indices, event_end_indices)):
-        # Compute absolute window bounds
-        start_actual = int(start - self.pre_stimulus)
-        end_actual = int(start + self.post_stimulus)
-        for j, ch in enumerate(channels):
-            # Slice raw_data for this event and channel
-            event_window = self.raw_data[start_actual:end_actual, ch]
-            event_tensor[i, j, :] = event_window
-
-    self.mep_matrix = event_tensor
-
-    # --- Optionally export ---
-    if export:
-        self._save_object(events, 'extracted_events', export_format)
-        self._save_object(event_tensor, 'mep_matrix', export_format)
-
+    trial.mep_matrix = event_tensor
     return event_tensor
 
 
-
-
 class Preprocessor:
+    """Preprocess a list of :class:`Trial` objects."""
 
-    def __init__(self, trials, remove_bad_channels = False, compile_events = False):
-        """
-        Initializes the Preprocessor with parameters for hybrid distance calculation.
-        """
-        
+    def __init__(
+        self,
+        trials,
+        event_channel=None,
+        remove_bad_channels=False,
+        pre_stimulus_ms=10,
+        post_stimulus_ms=100,
+        alpha=0.5,
+        beta=0.5,
+        cutoff_percentile=90,
+    ):
         self.trials = trials
+        self.event_channel = event_channel
         self.remove = remove_bad_channels
-        self.compile_events = compile_events
+        self.pre_ms = pre_stimulus_ms
+        self.post_ms = post_stimulus_ms
+        self.alpha = alpha
+        self.beta = beta
+        self.cutoff = cutoff_percentile
 
-        self.bad_cutoff_percentile = 90
+    def preprocess(self):
+        """Run preprocessing on all trials."""
 
-    def preprocess(self, export = True, output = None):
+        def process(trial):
+            if self.remove:
+                cleaned, good = remove_bad_channels(
+                    trial.data,
+                    std=True,
+                    alpha=self.alpha,
+                    beta=self.beta,
+                    cutoff_percentile=self.cutoff,
+                )
+                trial.data = cleaned
+                trial.good_channels = good
+            if self.event_channel is not None:
+                event_compiler(
+                    trial,
+                    self.event_channel,
+                    pre_stimulus_ms=self.pre_ms,
+                    post_stimulus_ms=self.post_ms,
+                )
 
-        if self.remove:
-
-            progress = TqdmProgressBar()
-            progress.run(self.trials, label="Removing Bad Channels", func=remove_bad_channels(alpha=0.5, beta=0.5, cutoff_percentile=self.bad_cutoff_percentile))
-
-        if self.compile_events:
-
-
+        progress = TqdmProgressBar()
+        progress.run(self.trials, label="Preprocessing", func=process)
+        return self.trials
