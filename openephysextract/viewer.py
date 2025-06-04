@@ -116,8 +116,8 @@ class Viewer:
 
             # current correction
             data = temp[channel, :, :]
-            current_matrix = np.array(current)[np.newaxis, np.newaxis]
-            data = data/current_matrix
+            current_matrix = np.array(current)[np.newaxis, :]
+            data = data / current_matrix
 
             # baseline correction
             baseline = temp[channel, :int(10/self.conversion_to_ms), :].mean(axis=1).mean(axis=0)
@@ -191,6 +191,102 @@ class Viewer:
         ax.legend(fontsize=21)
 
         plt.tight_layout()
+
+        return fig, delays
+
+    def plot_eeg(self, trial_index, window_start=-2, window_end=10, std=False,
+                 x_log=False, y_log=False, peak=False, threshold=None,
+                 height=None, distance=None, width=None, prominence=None,
+                 pre_stimulus=None, cutoff=None):
+        """Plot each EEG channel in its own subplot.
+
+        Parameters are the same as :meth:`plot_trial`.
+        """
+
+        search = {
+            'height': height,
+            'distance': distance,
+            'width': width,
+            'prominence': prominence,
+        }
+
+        temp = self.extracted[trial_index]['data']
+        notes = self.extracted[trial_index]['notes']
+        current = notes['currentLevel']
+        title = notes['session']
+
+        n_channels = temp.shape[0]
+        fig_height = 3 * n_channels
+        fig, axes = plt.subplots(n_channels, 1, figsize=(21, fig_height),
+                                dpi=210, sharex=True)
+
+        if n_channels == 1:
+            axes = [axes]
+
+        delays = {'positive peaks': [], 'negative peaks': []}
+
+        for channel, ax in enumerate(axes):
+            data = temp[channel, :, :]
+            current_matrix = np.array(current)[np.newaxis, :]
+            data = data / current_matrix
+
+            baseline = temp[channel, :int(10 / self.conversion_to_ms), :].mean(axis=1).mean(axis=0)
+            data = data - baseline
+
+            mean_events = data.mean(axis=1).flatten()
+            std_events = data.std(axis=1).flatten()
+
+            smoothed_mean = gf(mean_events, sigma=1.25)
+            smoothed_std = gf(std_events, sigma=1.25)
+
+            standardised = (smoothed_mean - smoothed_mean.mean()) / smoothed_mean.std()
+
+            if std:
+                ax.plot(self.time_in_ms, standardised, color='black')
+                ax.fill_between(self.time_in_ms, standardised - 1, standardised + 1, alpha=0.5)
+                if peak:
+                    chan_delays = find_meps(
+                        standardised, search, threshold, self.time_in_ms, ax,
+                        pre_stimulus, cutoff)
+                    for p in chan_delays['positive peaks']:
+                        delay, amp = p
+                        amp = smoothed_mean[delay]
+                        delays['positive peaks'].append((delay, amp, channel))
+                    for p in chan_delays['negative peaks']:
+                        delay, amp = p
+                        amp = smoothed_mean[delay]
+                        delays['negative peaks'].append((delay, amp, channel))
+            else:
+                ax.plot(self.time_in_ms, smoothed_mean, color='black')
+                ax.fill_between(self.time_in_ms, smoothed_mean - smoothed_std, smoothed_mean + smoothed_std, alpha=0.5)
+                if peak:
+                    chan_delays = find_meps(
+                        smoothed_mean, search, threshold, self.time_in_ms, ax,
+                        pre_stimulus, cutoff)
+                    for p in chan_delays['positive peaks']:
+                        delays['positive peaks'].append((*p, channel))
+                    for p in chan_delays['negative peaks']:
+                        delays['negative peaks'].append((*p, channel))
+
+            ax.set_ylabel(f'Ch {channel}', fontsize=12)
+            ax.set_xlim(window_start, window_end)
+
+            if x_log:
+                ax.set_xscale('log')
+                ax.set_xlabel('Log-Time', fontsize=12)
+
+            if y_log:
+                ax.set_yscale('log')
+                ax.set_ylabel(f'Ch {channel}\nLog-Amplitude', fontsize=12)
+
+            if std:
+                ax.set_ylabel(f'Ch {channel}\nStandardised Amplitude', fontsize=12)
+
+        axes[-1].set_xlabel('Time (ms)', fontsize=12)
+        fig.suptitle(f'Trial {title}', fontsize=16)
+        plt.tight_layout()
+
+        self.last_delays = delays
 
         return fig, delays
 
