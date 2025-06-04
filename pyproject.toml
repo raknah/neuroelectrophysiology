@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motor-evoked-potentials"
+version = "0.1.0"
+description = "Tools for conveniently extracting and analysing openephys data"
+authors = [
+    { name = "Aswinshankar Sivalingam", email = "shankar.01@icloud.com" }
+]
+readme = "README.md"
+license = { text = "MIT" }  # or whatever your LICENSE.txt says
+requires-python = ">=3.8"
+
+# Add your core package dependencies here
+dependencies = [
+    "numpy",
+    "pandas",
+    "tqdm",
+    "scipy",       # optional, remove if unused
+    "matplotlib",  # optional, remove if unused
+]
+
+[project.urls]
+Homepage = "https://github.com/raknah/motor-evoked-potentials-analysis"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["openephysextract*"]

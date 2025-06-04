@@ -1,0 +1,8 @@
+pyproject.toml
+extractor/__init__.py
+extractor/extractor.py
+openephysextract.egg-info/PKG-INFO
+openephysextract.egg-info/SOURCES.txt
+openephysextract.egg-info/dependency_links.txt
+openephysextract.egg-info/requires.txt
+openephysextract.egg-info/top_level.txt
