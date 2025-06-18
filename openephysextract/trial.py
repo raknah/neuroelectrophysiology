@@ -1,40 +1,51 @@
+from functools import cached_property
 import numpy as np
-import pandas as pd
 
 class Trial:
-    def __init__(self, trial, data, sampling_rate=30000, source = None, location = None):
+    __slots__ = (
+        'trial', 'raw', 'data', 'source', 'location',
+        'notes', 'group', 'sampling_rate'
+    )
 
-        '''Initializes a Trial object with trial number, data, and sampling rate.'''
-
+    def __init__(self, trial, raw=None, data=None, sampling_rate=30000,
+                 source=None, location=None):
+        """Initializes a Trial with identifiers, data, and metadata."""
         self.trial = trial
-        self.data = data
-        self.shape = data.shape
-        self.notes = pd.Series(dtype=object)
+        self.raw = raw
+        self.data = data  # shape: channels x samples
+        self.source = source
+        self.location = location
+        self.notes = {}   # lightweight dict for annotations
         self.group = None
         self.sampling_rate = sampling_rate
-        self.time_axis = np.arange(len(data)) / sampling_rate
 
     def __len__(self):
-        return len(self.data)
+        """Number of channels."""
+        return self.data.shape[0]
 
     def __getitem__(self, key):
+        """Channel or slice access delegated to data array."""
         return self.data[key]
 
     def __repr__(self):
-        return f"Trial (#: {self.trial}, shape: {self.data.shape}, group: {self.group})"
+        return (
+            f"Trial(#: {self.trial}, shape: {self.data.shape},"
+            f" group: {self.group})"
+        )
+    @cached_property
+    def duration(self) -> float:
+        """Total time of trial in seconds."""
+        return self.data.shape[1] / self.sampling_rate
 
-    @property
-    def duration(self):
-        return len(self.data[0]) / self.sampling_rate
-
-    @property
-    def times(self):
+    @cached_property
+    def times(self) -> np.ndarray:
+        """Time vector for samples, in seconds."""
         return np.arange(self.data.shape[1]) / self.sampling_rate
 
-    def add_notes(self, notes):
-        if isinstance(notes, dict):
-            notes = pd.Series(notes)
-        elif not isinstance(notes, pd.Series):
-            raise TypeError("Notes must be a dictionary or a pandas Series.")
-        self.notes = self.notes.append(notes, ignore_index=True)
-        self.group = notes.get('group', self.group)
+    def add_notes(self, notes: dict):
+        """Merge user-provided notes into metadata."""
+        if not isinstance(notes, dict):
+            raise TypeError("Notes must be provided as a dict.")
+        self.notes.update(notes)
+        if 'group' in notes:
+            self.group = notes['group']
