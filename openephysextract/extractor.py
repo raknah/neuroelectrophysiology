@@ -1,16 +1,13 @@
 import numpy as np
-import pandas as pd
 import os
-import json
 import pickle
-
 from open_ephys.analysis import Session
 
 from .trial import Trial
-from .progress import TqdmProgressBar  # Use the updated tqdm-based progress bar
+from .utilities import TqdmProgressBar
 
 class Extractor:
-    def __init__(self, source, sampling_rate, channels = None, output=None):
+    def __init__(self, source, sampling_rate, channels=None, output=None):
         self.source = source
         self.files = os.listdir(source)
         self.channels = channels
@@ -20,14 +17,13 @@ class Extractor:
         # relevant paths
         self.path_to_all_data = 'Record Node 103/experiment1/recording1/continuous/OE_FPGA_Acquisition_Board-100.Rhythm Data'
 
-        # extracted attributes
+        # storage for output trials
         self.trials = []
 
-    def extractify(self, n = None, export=False):
+    def extractify(self, n=None, export=False, export_name='raw_data.pkl'):
         """
         Extracts raw data from Open Ephys files and converts them into Trial objects.
         """
-
         if n is None:
             n = len(self.files)
 
@@ -41,7 +37,11 @@ class Extractor:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Path does not exist: {path}")
 
-            sample_numbers = np.load(os.path.join(path, self.path_to_all_data, 'sample_numbers.npy'))
+            sample_numbers_path = os.path.join(path, self.path_to_all_data, 'sample_numbers.npy')
+            if not os.path.exists(sample_numbers_path):
+                raise FileNotFoundError(f"Missing sample_numbers.npy at: {sample_numbers_path}")
+
+            sample_numbers = np.load(sample_numbers_path)
             data_length = sample_numbers.max() - sample_numbers.min()
 
             session = Session(path)
@@ -53,14 +53,21 @@ class Extractor:
             ).T
 
             if self.channels is None:
-                self.channels = raw.shape[0]  # use all channels if none specified
+                selected = raw  # use all channels
+            else:
+                selected = raw[self.channels, :]
 
-            raw = raw[self.channels, :]
+            if self.channels and selected.shape[0] != len(self.channels):
+                raise ValueError(f"Expected {len(self.channels)} channels, got {selected.shape[0]}")
 
-            if raw.shape[0] != len(self.channels):
-                raise ValueError(f"Expected {len(self.channels)} channels, got {raw.shape[0]}")
-
-            trial = Trial(file, raw, sampling_rate=self.sampling_rate)
+            trial = Trial(
+                trial=file,
+                raw=selected,
+                data=None,
+                sampling_rate=self.sampling_rate,
+                source=self.source,
+                location=self.output
+            )
             self.trials.append(trial)
 
         progress = TqdmProgressBar()
@@ -68,7 +75,7 @@ class Extractor:
 
         if export:
             os.makedirs(self.output, exist_ok=True)
-            with open(os.path.join(self.output, 'raw_data.pkl'), 'wb') as f:
+            with open(os.path.join(self.output, export_name), 'wb') as f:
                 pickle.dump(self.trials, f)
 
         return self.trials
