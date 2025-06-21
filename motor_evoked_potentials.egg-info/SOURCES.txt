@@ -6,5 +6,10 @@ motor_evoked_potentials.egg-info/dependency_links.txt
 motor_evoked_potentials.egg-info/requires.txt
 motor_evoked_potentials.egg-info/top_level.txt
 openephysextract/__init__.py
+openephysextract/analysis.py
 openephysextract/extractor.py
+openephysextract/plot.py
+openephysextract/preprocess.py
 openephysextract/trial.py
+openephysextract/utilities.py
+openephysextract/viewer.py

@@ -1,105 +1,87 @@
-# Motor Evoked Potentials (MEP) Analysis Package
+# Open Ephys Extract
 
 ## Overview
-The **MEP Analysis** package (distributed as `mepextract`) provides tools for automated extraction, processing, and visualization of Motor Evoked Potentials (MEP) from electrophysiological recordings. Designed for scalability and flexibility, this package streamlines analysis workflows for large EEG datasets by offering:
+`openephysextract` offers a streamlined workflow for loading, cleaning and exploring data recorded with the [Open Ephys](https://open-ephys.org/) system. The package converts raw acquisitions into easy-to-handle `Trial` objects and exposes utilities for preprocessing, interactive visualisation and basic analysis.
 
-- **Batch Processing**: Efficiently processes multiple trials with progress tracking.
-- **Signal Extraction**: Leverages custom extraction methods to isolate MEP signals.
-- **Visualization**: Utilizes high-quality plotting styles (integrating with `matplotlib` and `scienceplots`) to present analysis results.
+Key components include:
 
+- **Extractor** – reads continuous Open Ephys folders and builds `Trial` objects containing the raw samples.
+- **Preprocessor** – applies modular steps (bad channel removal, filtering, event compilation, epoching and downsampling) to a list of trials.
+- **Viewer** – Jupyter widget for browsing trials, detecting MEP peaks and classifying each trial as accepted, review or rejected.
+- **Analysis & Plotting** – convenience functions for band power extraction, logistic scaling and displaying raw signals, spectrograms and PSDs.
 
-### Features
-- **Automated Trial Processing:** Loops through trials, skipping those marked for rejection.
-- **Data Compatibility:** Reads input data from CSV files using `pandas`.
-- **Custom Extraction Pipelines:** Uses the `Extractor` class to perform signal extraction.
-- **Interactive Visualization:** Uses the `Viewer` class to render detailed plots of extracted signals and perform peak detection.
-- **Modular Design:** Separates extraction (`extractor.py`) and visualization (`viewer.py`) into distinct modules for easy maintenance and extension.
+The examples below demonstrate a minimal workflow.
 
-## Usage
-
-#### Import the Package
-```python
-from mepextract.extracting import Extractor, Viewer
-import pandas as pd
-import matplotlib.pyplot as plt
-```
-
-#### Load Your MEP metadata
-The package expects information (saved as `notes` attribute of the `Extractor` class) about sessions and trials (_session_name_, _phenotype_, _current level_, _stimulation type_) to be stored in a CSV file. Load this file using `pandas`:
+## Quickstart
+Below is a condensed version of the workflow found in the *5xFAD Resting State EEG* notebook.
+It demonstrates how to configure destination folders for extracted and processed data.
 
 ```python
-data_file = "path/to/your/MICE_MEP_2024.csv"
-spreadsheet = pd.read_csv(data_file)
+import os
+import pickle
+
+from openephysextract import Extractor, Preprocessor, Viewer
+from openephysextract.preprocess import (
+    RemoveBadStep, DownsampleStep, FilterStep, EpochStep,
+)
+from openephysextract.analysis import bandpower, logistic_scaler
+from openephysextract.utilities import savify
+
+# ---- paths ----
+source = "/path/to/open_ephys_sessions"  # folder with session directories
+channels = [3, 4, 5, 6, 7, 8]             # indices of data channels to load
+sampling_rate = 30000                     # original acquisition rate in Hz
+
+# folders used by the pipeline
+output_raw = os.path.join(source, "processed")      # extracted Trials saved here
+output_pp = "/path/to/resting-state-analysis"       # destination for preprocessing outputs
+
+# ---- extraction ----
+extractor = Extractor(
+    source=source,           # base folder of Open Ephys files
+    channels=channels,       # channel indices to include
+    sampling_rate=sampling_rate,  # sampling rate of recordings
+    output=output_raw,       # where to store raw Trial objects
+)
+trials = extractor.extractify(export=True)  # returns a list of Trial objects
+
+# reload the pickled trials if needed
+with open(os.path.join(output_raw, "raw_data.pkl"), "rb") as f:
+    trials = pickle.load(f)
+
+# ---- preprocessing ----
+steps = [
+    RemoveBadStep(alpha=0.3, beta=0.7),  # remove noisy channels
+    DownsampleStep(target_fs=300),       # decimate to 300 Hz
+    FilterStep(lowcut=0.1, highcut=80, order=4),  # band-pass filter
+    EpochStep(frame=300, stride=30),     # segment into 300‑sample windows
+]
+processor = Preprocessor(
+    trials=trials,
+    steps=steps,
+    destination=output_pp,   # where processed trials will be saved
+)
+processed = processor.preprocess(parallel=False, export=True)
+
+# ---- visualise ----
+Viewer(processed, sampling_rate=300).classifier()  # interactive labelling widget
+
+# ---- analysis ----
+features = [bandpower(trial) for trial in processed]  # extract spectral power
+savify(features, output_pp, "features")
+
+scaled = [logistic_scaler(trial) for trial in features]  # logistic normalisation
+savify(scaled, output_pp, "logistic-scaled")
 ```
 
-#### Process the Data
-Extract signals from trials that are valid by looping through the trials and using the `Extractor` class:
-
-```python
-from mepextract.extracting import Extractor
-sampling_rate = 30000
-
-all_extracted = []
-
-n = len(spreadsheet)
-for i in tqdm(range(0, n), desc="Processing trials"):
-    if spreadsheet['sessionType'][i] == 'reject':
-        continue
-    else:
-        # relevant information
-        notes = spreadsheet.loc[i]
-
-        # defining extractor object
-        extractor = Extractor(
-            master_folder=master_folder,
-            notes=notes,
-            recording_channels=[5, 7],
-            sampling_rate=sampling_rate,
-            pre_stimulus_ms=10,
-            post_stimulus_ms=100)
-
-        # extracting relevant data
-        extracted = extractor.lazy(event_channel=13, export=True)
-
-        all_extracted.append(extracted)
+## Installation
+The project requires Python 3.8+. Install directly from the repository:
+```bash
+pip install git+https://github.com/raknah/motor-evoked-potentials-analysis
 ```
-```python
-# each entry in the list is a dictionary with the following keys
-all_extracted[0].keys()
-```
-
-dict_keys(['trial', 'notes', 'events', 'data', 'event_mean', 'event_std'])
-
-#### Visualize an Extracted Signal
-Plot the extracted signal from the first valid trial:
-
-```python
-from mepextract.extracting import Viewer
-viewer = Viewer(extracted = extracted, sampling_rate=30000)
-
-# generate a GUI for peak detection and classification
-viewer.classifier() 
-```
-
-```python
-# create three lists based on classification (accepted, review and rejected) with the detected peaks appended
-viewer.extract() 
-accepted = viewer.accepted
-review = viewer.review
-rejected = viewer.rejected
-```
-
-```python
-# each entry in the list is a dictionary with the following keys
-accepted[0].keys()
-```
-dict_keys(['trial', 'notes', 'events', 'data', 'event_mean', 'event_std', 'positive peaks', 'negative peaks'])
-
 
 ## License
-
-This project is licensed under the MIT License.
+Released under the MIT license.
 
 ## Acknowledgments
-
 Special thanks to Dr. Nikolas Perentos for providing the initial data and insight for the development of this package.
