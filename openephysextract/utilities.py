@@ -1,6 +1,7 @@
 from tqdm.notebook import tqdm
 import psutil
 import dill as pickle
+import pandas as pd
 import os
 
 
@@ -80,3 +81,32 @@ class TqdmProgressBar:
                 })
                 func(item)
                 self.last_file = str(item)
+
+
+def spreadsheet(location, name, id, relevant, sheet = None):
+    """
+    Load a spreadsheet (CSV or Excel) and filter it by trial IDs.
+    :param location:
+    :param name:
+    :param id:
+    :param relevant:
+    :param sheet:
+    :return: pd.DataFrame
+    """
+    filetype = name.split('.')[-1].lower()
+    if filetype not in ['csv', 'xlsx']:
+        raise ValueError("Unsupported file type. Only 'csv' and 'xlsx' are supported.")
+
+    path = os.path.join(location, name)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
+
+    if filetype == 'csv':
+        df = pd.read_csv(path, sheet_name=sheet)
+
+    elif filetype == 'xlsx':
+        df = pd.read_excel(path, sheet_name=sheet)
+
+    df = df[df[id].isin(relevant)]
+
+    return df.reset_index(drop=True)
