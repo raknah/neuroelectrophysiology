@@ -2,9 +2,9 @@ import numpy as np
 
 from scipy.signal.windows import dpss
 from scipy.fft import rfftfreq, rfft
-from .trial import Trial
+from .session import Session
 
-def bandpower(trial, bands=None, nw=2):
+def bandpower(session, bands=None, nw=2):
     if bands is None:
         bands = {
             'delta': (1, 4),
@@ -14,8 +14,8 @@ def bandpower(trial, bands=None, nw=2):
             'gamma': (25, 50)
         }
 
-    fs = trial.sampling_rate
-    epochs, channels, samples = trial.data.shape
+    fs = session.sampling_rate
+    epochs, channels, samples = session.data.shape
     frequencies = rfftfreq(samples, d=1/fs)
 
     tapers = dpss(samples, NW=nw, Kmax=2*nw - 1)
@@ -26,7 +26,7 @@ def bandpower(trial, bands=None, nw=2):
 
     for epoch in range(epochs):
         for channel in range(channels):
-            signal = trial.data[epoch, channel, :]
+            signal = session.data[epoch, channel, :]
             spectrum_sum = np.zeros_like(frequencies)
 
             for taper in tapers:
@@ -40,15 +40,15 @@ def bandpower(trial, bands=None, nw=2):
                 mask = (frequencies >= low) & (frequencies <= high)
                 features[epoch, channel, idx] = np.sum(psd[epoch, channel, mask])
 
-    trial.data = features  # shape: (epochs, channels, bands)
-    return trial
+    session.data = features  # shape: (epochs, channels, bands)
+    return session
 
-def logistic_scaler(trial):
+def logistic_scaler(session):
 
-    features = trial.data
+    features = session.data
     scaled = np.zeros_like(features)
 
-    for i in range(trial.data.shape[1]):
+    for i in range(session.data.shape[1]):
         x = features[:, i]
         q1 = np.percentile(x, 25)
         q3 = np.percentile(x, 75)
@@ -60,6 +60,6 @@ def logistic_scaler(trial):
         else:
             lam = (2 * np.log(3)) / IQR
             scaled[:, i] = 1 / (1 + np.exp(-lam * (x - median)))
-    trial.data = scaled
+    session.data = scaled
 
-    return trial
+    return session
