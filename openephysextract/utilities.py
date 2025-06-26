@@ -1,63 +1,102 @@
 from tqdm.notebook import tqdm
-import psutil
-import dill as pickle
-import pandas as pd
 import os
+import pickle
+import json
+import dill
+import psutil
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
+from typing import Optional
 
+def ensure_dir(directory):
+    Path(directory).mkdir(parents=True, exist_ok=True)
 
-def savify(obj, destination, name):
+def _get_extension(name: str) -> str:
+    """Extract file extension from filename, default to 'pkl' if missing."""
+    ext = os.path.splitext(name)[1].lstrip('.')
+    return ext if ext else 'pkl'
+
+def savify(obj, name: str, destination: str):
     """
-    Save a Python object to a .pkl file using dill.
+    Save object to structured destination.
 
-    Parameters
-    ----------
-    obj : Any
-        The object to be serialized.
-    destination : str
-        Directory to save the file.
-    name : str
-        Filename (with or without .pkl extension).
+    - Figures → destination/graphs/
+    - Arrays, lists, dicts, tuples, tensors → destination/outputs/
+    - All other objects → destination/models/
+
+    Parameters:
+        obj: any object (e.g. figure, data, model)
+        name: filename with or without extension (e.g. 'session1.pkl', 'plot1')
+        destination: root folder (e.g. '~/Documents/Research/...')
     """
-    if not name.endswith('.pkl'):
-        name += '.pkl'
-    path = os.path.join(destination, name)
-    os.makedirs(destination, exist_ok=True)
+    destination = Path(destination).expanduser()
+    ext = _get_extension(name)
+    if '.' not in name:
+        name += f".{ext}"
 
-    with open(path, 'wb') as f:
-        pickle.dump(obj, f)
+    if isinstance(obj, plt.Figure):
+        subfolder = destination / "graphs"
+    elif isinstance(obj, (list, tuple, dict)) or hasattr(obj, 'shape'):
+        subfolder = destination / "outputs"
+    else:
+        subfolder = destination / "models"
 
-    print(f"Saved to {path}")
+    full_path = subfolder / name
+    ensure_dir(subfolder)
 
+    if isinstance(obj, plt.Figure):
+        obj.savefig(full_path)
+        plt.close(obj)
+    elif ext == "json":
+        with open(full_path, 'w') as f:
+            json.dump(obj, f, indent=2)
+    elif ext in {"pkl", "dill"}:
+        with open(full_path, 'wb') as f:
+            try:
+                pickle.dump(obj, f)
+            except Exception:
+                dill.dump(obj, f)
+    else:
+        raise ValueError(f"Unsupported file extension: {ext}")
 
-def loadify(location, name):
+    print(f"Saved to {full_path}")
+
+def loadify(name: str, location: str, obj_type: Optional[str] = None):
     """
-    Load a Python object from a .pkl file using dill.
+    Load object from location.
 
-    Parameters
-    ----------
-    location : str
-        Directory containing the file.
-    name : str
-        Filename (with or without .pkl extension).
+    Parameters:
+        name: filename with extension (e.g. 'session1.pkl')
+        location: root folder (e.g. '~/Documents/Research/...')
+        obj_type: one of ['graph', 'output', 'model'] or None
 
-    Returns
-    -------
-    Any
-        The deserialized Python object.
+    Returns:
+        Loaded object
     """
-    if not name.endswith('.pkl'):
-        name += '.pkl'
-    path = os.path.join(location, name)
+    location = Path(location).expanduser()
+    subdir = {
+        'graph': location / "graphs",
+        'output': location / "outputs",
+        'model': location / "models"
+    }.get(obj_type, location)
 
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"File not found: {path}")
+    full_path = subdir / name
+    if not full_path.exists():
+        raise FileNotFoundError(f"File not found: {full_path}")
 
-    with open(path, 'rb') as f:
-        obj = pickle.load(f)
-
-    print(f"Loaded from {path}")
-    return obj
-
+    ext = _get_extension(name)
+    if ext == "json":
+        with open(full_path, 'r') as f:
+            return json.load(f)
+    elif ext in {"pkl", "dill"}:
+        with open(full_path, 'rb') as f:
+            try:
+                return pickle.load(f)
+            except Exception:
+                return dill.load(f)
+    else:
+        raise ValueError(f"Unsupported file extension: {ext}")
 
 class TqdmProgressBar:
     """
