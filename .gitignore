@@ -1,0 +1,8 @@
+# EEG / BioSignal formats
+*.eeg
+*.vhdr
+*.vmrk
+*.edf
+*.tsy
+*.xml
+*.iml
