@@ -298,6 +298,98 @@ class RemoveBadStep(SessionStep):
         session.preprocessed = cleaned
         return session
 
+class PlotAndTraceRemoveBadStep(RemoveBadStep):
+    def __init__(self, *args,
+                 plot_dist=True,
+                 plot_traces=True,
+                 trace_window_sec=1.0,
+                 figsize=(21, 7),
+                 **kwargs):
+        """
+        - plot_dist:     show the hybrid-distance histogram + cutoff
+        - plot_traces:   show the raw-trace overlay
+        - trace_window_sec: how many seconds of raw to show
+        - figsize:       overall figure size
+        """
+        super().__init__(*args, **kwargs)
+        self.plot_dist       = plot_dist
+        self.plot_traces     = plot_traces
+        self.trace_window_sec = trace_window_sec
+        self.figsize         = figsize
+
+    def run(self, data: np.ndarray, fs: float):
+        # --- 1) Standard logic: get cleaned data + mask ---
+        kept_data, keep_mask = super().run(data, fs)
+
+        # --- 2) Recompute distances & cutoff for plotting ---
+        dists  = self._compute_distances(data)                # shape (n_ch,)
+        cutoff = np.percentile(dists, self.cutoff_percentile)
+
+        # --- 3) Identify indices ---
+        all_idx = np.arange(data.shape[0])
+        kept_idx    = all_idx[keep_mask]
+        removed_idx = all_idx[~keep_mask]
+
+        # --- 4) Make a two‐panel figure if requested ---
+        if self.plot_dist or self.plot_traces:
+            plt.figure(figsize=self.figsize)
+
+            # Panel A: hybrid‐distance vs channel
+            if self.plot_dist:
+                ax1 = plt.subplot2grid((3,1), (0,0), rowspan=1)
+                ax1.plot(all_idx, dists, 'o-', alpha=0.7, label='distance')
+                ax1.axhline(cutoff, color='k', ls='--',
+                            label=f'{self.cutoff_percentile}th pct = {cutoff:.3g}')
+                ax1.scatter(removed_idx, dists[removed_idx],
+                            c='red',    s=50, label='removed')
+                ax1.scatter(kept_idx,    dists[kept_idx],
+                            c='darkcyan', s=50, label='kept')
+                ax1.set_ylabel('Hybrid distance')
+                ax1.set_title(f'RemoveBadStep (α={self.alpha},β={self.beta})')
+                ax1.legend(ncol=2)
+
+            # Panel B: overlaid raw‐trace plot
+            if self.plot_traces:
+                # compute time axis & window mask
+                n_samps = data.shape[1]
+                t = np.arange(n_samps) / fs
+                win_mask = t < self.trace_window_sec
+                t_win = t[win_mask]
+
+                ax2 = plt.subplot2grid((3,1), (1,0), rowspan=2)
+                # choose a reference for offset
+                if kept_idx.size:
+                    ref = data[kept_idx[0], win_mask]
+                else:
+                    ref = data[0, win_mask]
+                offset = np.ptp(ref) * 1.2 or 1.0
+
+                for ch in all_idx:
+                    trace = data[ch, win_mask]
+                    # safe normalize
+                    centered = trace - np.mean(trace)
+                    peak = np.max(np.abs(centered))
+                    if peak < 1e-12:
+                        normed = np.zeros_like(centered)
+                    else:
+                        normed = centered / peak * offset
+
+                    y = normed + ch * offset
+                    color = 'darkcyan' if keep_mask[ch] else 'red'
+                    ax2.plot(t_win, y, lw=3, alpha=0.7, color=color)
+
+                ax2.set_yticks(all_idx * offset)
+                ax2.set_yticklabels([f"Ch {i}" for i in all_idx])
+                ax2.set_xlabel("Time (s)")
+                ax2.set_title(f"Raw traces (first {self.trace_window_sec:.2f}s), "
+                              "darkcyan=kept, red=removed")
+
+            plt.tight_layout()
+            plt.show()
+
+        # --- 5) Return exactly what the base class does ---
+        return kept_data, keep_mask
+
 
 class ReReferenceStep(SessionStep):
     def __init__(self, reference="average", bipolar_pairs=None):

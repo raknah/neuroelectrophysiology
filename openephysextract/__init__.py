@@ -1,4 +1,5 @@
 from .session import Session
+from .utilities import savify, loadify, spreadsheet
 from .preprocess import (
     Preprocessor,
     RemoveBadStep,
@@ -12,8 +13,6 @@ from .preprocess import (
 from .plot import plotifyRAWdata, plotifyEEGbands, plot_power_spectrum, plot_ica_topographies, plot_channel_variances
 from .analysis import bandpower
 from .extractor import Extractor
-from .dashboards.qcdashboard import QCDashboard
-
 __all__ = [
     "Session",
     "Preprocessor",
@@ -24,9 +23,4 @@ __all__ = [
     "EventCompileStep",
     "EpochStep",
     "ReReferenceStep",
-    "plot_session",
-    "plot_summary",
-    "analyze_session",
-    "extract_features",
-    "QCDashboard"
 ]

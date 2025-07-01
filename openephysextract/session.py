@@ -9,7 +9,7 @@ class Session:
         'location', 'notes', 'group', 'events', 'states',
         'ica_model', 'ica_sources', 'bad_ics',
         # New slots for QC
-        'output_dir', 'data_pointers', 'qc_summaries'
+        'output_dir', 'data_pointers', 'qc_summaries', 'summary_rate'
     )
 
     def __init__(self,
@@ -49,6 +49,7 @@ class Session:
         self.data_pointers = {}
         # lightweight summaries in RAM for QC
         self.qc_summaries = {}
+        self.summary_rate = None
 
     # retain existing dunder methods
     def __len__(self):
