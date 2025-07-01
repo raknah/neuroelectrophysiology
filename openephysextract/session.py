@@ -1,6 +1,6 @@
 from functools import cached_property
 import numpy as np
-from pathlib import Path
+
 
 class Session:
     __slots__ = (
@@ -8,8 +8,7 @@ class Session:
         'raw', 'preprocessed', 'data', 'shape',
         'location', 'notes', 'group', 'events', 'states',
         'ica_model', 'ica_sources', 'bad_ics',
-        # New slots for QC
-        'output_dir', 'data_pointers', 'qc_summaries', 'summary_rate'
+        'good_channels', 'stats'
     )
 
     def __init__(self,
@@ -19,8 +18,7 @@ class Session:
                  raw=None,
                  preprocessed=None,
                  data=None,
-                 location=None,
-                 output_dir: str = None):
+                 location=None):
         """Initializes a session with identifiers, data, metadata, and QC storage."""
         # existing initialization
         self.session = session
@@ -40,16 +38,11 @@ class Session:
         self.ica_sources = None
         self.bad_ics = None
 
-        # QC-specific initialization
-        # Determine where to save full-resolution arrays
-        base = Path(output_dir) if output_dir else Path.cwd() / 'qc_output'
-        self.output_dir = base / f"{self.experiment}_{self.session}"
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        # pointers to disk-stored full arrays
-        self.data_pointers = {}
-        # lightweight summaries in RAM for QC
-        self.qc_summaries = {}
-        self.summary_rate = None
+        # placeholder for indices of good channels after cleaning
+        self.good_channels = None
+
+        # per-step statistics for validation
+        self.stats = {}
 
     # retain existing dunder methods
     def __len__(self):
@@ -80,27 +73,3 @@ class Session:
         else:
             raise ValueError("Notes must contain a 'group' key to set the group or phenotype.")
 
-    # --- QC retention policy methods ---
-    def save_full(self, name: str, array: np.ndarray):
-        """Save full-resolution array to disk and record pointer."""
-        file_path = self.output_dir / f"{name}.npy"
-        np.save(file_path, array)
-        self.data_pointers[name] = {
-            'path': file_path,
-            'shape': array.shape,
-            'dtype': array.dtype.name
-        }
-
-    def load_full(self, name: str) -> np.ndarray:
-        """Memory-map and load a disk-stored array."""
-        info = self.data_pointers.get(name)
-        if info is None:
-            raise KeyError(f"No data pointer for '{name}'")
-        return np.load(info['path'], mmap_mode='r')
-
-    def store_summary(self, name: str, downsampled: np.ndarray, stats: dict):
-        """Keep lightweight summary in RAM for QC plotting."""
-        self.qc_summaries[name] = {
-            'downsampled': downsampled,
-            'stats': stats
-        }

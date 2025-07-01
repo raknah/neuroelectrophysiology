@@ -118,6 +118,40 @@ def plot_power_spectrum(data, fs, destination=None, title="Power Spectrum"):
     return fig
 
 
+def plot_filter_preview(raw, filtered, fs, channel=0, window_sec=1.0):
+    """Overlay raw and filtered signals for quick inspection."""
+    n = int(window_sec * fs)
+    t = np.arange(n) / fs
+    fig, ax = plt.subplots(figsize=(12, 5), dpi=150)
+    ax.plot(t, raw[channel, :n], label="raw", alpha=0.7)
+    ax.plot(t, filtered[channel, :n], label="filtered", alpha=0.7)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Amplitude")
+    ax.legend()
+    plt.tight_layout()
+    return fig
+
+
+def plot_bad_channel_removal(data, keep_indices, fs, window_sec=1.0):
+    """Visualise kept and removed channels on a short time window."""
+    n = int(window_sec * fs)
+    t = np.arange(n) / fs
+    all_idx = np.arange(data.shape[0])
+    keep_mask = np.isin(all_idx, keep_indices)
+    fig, ax = plt.subplots(figsize=(12, 7), dpi=150)
+    offset = np.ptp(data[:, :n]) * 0.6 or 1.0
+    for ch in all_idx:
+        trace = data[ch, :n]
+        y = trace / (np.max(np.abs(trace)) or 1) * offset + ch * offset
+        color = 'darkcyan' if keep_mask[ch] else 'red'
+        ax.plot(t, y, color=color)
+    ax.set_yticks(all_idx * offset)
+    ax.set_yticklabels([f"Ch {i}" for i in all_idx])
+    ax.set_xlabel("Time (s)")
+    plt.tight_layout()
+    return fig
+
+
 def plot_ica_topographies(ica, destination=None, title="ICA Components"):
     fig = ica.plot_components(show=False)
     fig.suptitle(title, y=1.01)
