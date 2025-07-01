@@ -42,26 +42,15 @@ def remove_bad(session: Session,
     keep = np.setdiff1d(np.arange(data.shape[0]), bad)
     cleaned = data[keep, :]
 
-    # Retention: save full-resolution array
-    try:
-        session.save_full('remove_bad', cleaned)
-    except Exception as e:
-        logger.error(f"Failed to save full data for remove_bad: {e}")
-
-    # Compute summary at session-specific rate
-    rate = getattr(session, 'summary_rate', 1)
-    factor = max(1, int(session.sampling_rate / rate))
-    down = cleaned if factor == 1 else decimate(cleaned, factor, axis=-1)
+    # statistics for optional inspection
     stats = {
         'n_channels_before': int(data.shape[0]),
         'n_channels_after': int(cleaned.shape[0]),
         'mean_distance': float(hybrid_mean.mean()),
         'std_distance': float(hybrid_mean.std())
     }
-    try:
-        session.store_summary('remove_bad', down, stats)
-    except Exception as e:
-        logger.error(f"Failed to store summary for remove_bad: {e}")
+
+    session.stats['remove_bad'] = stats
 
     return cleaned, list(keep)
 
@@ -124,26 +113,13 @@ def filter_session(session: Session,
         b, a = butter(order, [lowcut/nyq, highcut/nyq], btype='band')
         data = filtfilt(b, a, data, axis=1)
 
-    # Retention
-    try:
-        session.save_full('filter_session', data)
-    except Exception as e:
-        logger.error(f"Failed to save full data for filter_session: {e}")
-
-    rate = getattr(session, 'summary_rate', 1)
-    factor = max(1, int(session.sampling_rate / rate))
-    down = data if factor == 1 else decimate(data, factor, axis=-1)
     stats = {
         'mean': float(np.mean(data)),
         'std': float(np.std(data)),
         'max': float(np.max(data)),
         'min': float(np.min(data))
     }
-    try:
-        session.store_summary('filter_session', down, stats)
-    except Exception as e:
-        logger.error(f"Failed to store summary for filter_session: {e}")
-
+    session.stats['filter_session'] = stats
     return data
 
 
@@ -154,21 +130,11 @@ def downsample_session(session: Session,
     factor = max(1, int(session.sampling_rate // target_fs))
     downsampled = data if factor == 1 else decimate(data, factor, axis=1, ftype='fir', zero_phase=True)
 
-    # Retention
-    try:
-        session.save_full('downsample_session', downsampled)
-    except Exception as e:
-        logger.error(f"Failed to save full data for downsample_session: {e}")
-
     stats = {
         'mean': float(np.mean(downsampled)),
         'std': float(np.std(downsampled))
     }
-    try:
-        session.store_summary('downsample_session', downsampled, stats)
-    except Exception as e:
-        logger.error(f"Failed to store summary for downsample_session: {e}")
-
+    session.stats['downsample_session'] = stats
     return downsampled
 
 
@@ -222,20 +188,11 @@ def event_compiler(session: Session,
             segment = pad
         tensor[i] = segment
 
-    # Retention
-    try:
-        session.save_full('peri_event', tensor)
-    except Exception as e:
-        logger.error(f"Failed to save full data for peri_event: {e}")
     stats = {
         'n_trials': int(tensor.shape[0]),
         'trial_length': span
     }
-    summary = tensor.mean(axis=(0,2)) if tensor.size else np.array([])
-    try:
-        session.store_summary('peri_event', summary, stats)
-    except Exception as e:
-        logger.error(f"Failed to store summary for peri_event: {e}")
+    session.stats['event_compiler'] = stats
     return tensor
 
 
@@ -259,21 +216,12 @@ def epoch_sessions(session: Session,
         clean_epochs = [ep for ep in epochs if np.sum(np.ptp(ep, axis=1) > threshold)/ch < (1 - consensus)]
         epochs = np.stack(clean_epochs, axis=0) if clean_epochs else np.empty((0, ch, frame))
 
-    # Retention
-    try:
-        session.save_full('epochs', epochs)
-    except Exception as e:
-        logger.error(f"Failed to save full data for epochs: {e}")
     stats = {
         'n_epochs': int(epochs.shape[0]),
         'frame': frame,
         'stride': stride
     }
-    summary = epochs.mean(axis=(0,2)) if epochs.size else np.array([])
-    try:
-        session.store_summary('epochs', summary, stats)
-    except Exception as e:
-        logger.error(f"Failed to store summary for epochs: {e}")
+    session.stats['epoch_sessions'] = stats
     return epochs
 
 # --- Step abstraction and implementations ---
@@ -294,101 +242,77 @@ class RemoveBadStep(SessionStep):
         self.cutoff = cutoff_percentile
 
     def apply(self, session: Session) -> Session:
-        cleaned, _ = remove_bad(session, self.std, self.alpha, self.beta, self.cutoff)
+        cleaned, keep = remove_bad(session, self.std, self.alpha, self.beta, self.cutoff)
         session.preprocessed = cleaned
+        session.good_channels = keep
         return session
 
 class PlotAndTraceRemoveBadStep(RemoveBadStep):
     def __init__(self, *args,
-                 plot_dist=True,
-                 plot_traces=True,
-                 trace_window_sec=1.0,
+                 plot_dist: bool = True,
+                 plot_traces: bool = True,
+                 trace_window_sec: float = 1.0,
                  figsize=(21, 7),
                  **kwargs):
-        """
-        - plot_dist:     show the hybrid-distance histogram + cutoff
-        - plot_traces:   show the raw-trace overlay
-        - trace_window_sec: how many seconds of raw to show
-        - figsize:       overall figure size
-        """
+        """Same as :class:`RemoveBadStep` but displays diagnostic plots."""
         super().__init__(*args, **kwargs)
-        self.plot_dist       = plot_dist
-        self.plot_traces     = plot_traces
+        self.plot_dist = plot_dist
+        self.plot_traces = plot_traces
         self.trace_window_sec = trace_window_sec
-        self.figsize         = figsize
+        self.figsize = figsize
 
-    def run(self, data: np.ndarray, fs: float):
-        # --- 1) Standard logic: get cleaned data + mask ---
-        kept_data, keep_mask = super().run(data, fs)
+    def apply(self, session: Session) -> Session:
+        data = session.raw if session.preprocessed is None else session.preprocessed
+        cleaned, keep = remove_bad(session, self.std, self.alpha, self.beta, self.cutoff)
+        session.preprocessed = cleaned
+        session.good_channels = keep
 
-        # --- 2) Recompute distances & cutoff for plotting ---
-        dists  = self._compute_distances(data)                # shape (n_ch,)
-        cutoff = np.percentile(dists, self.cutoff_percentile)
-
-        # --- 3) Identify indices ---
+        # recompute distances for plotting
+        temp = zscore(data, axis=1) if self.std else data
+        eucl = squareform(pdist(temp, metric="euclidean"))
+        if eucl.max() != eucl.min():
+            eucl = (eucl - eucl.min()) / (eucl.max() - eucl.min())
+        corr = np.corrcoef(temp)
+        corr_dist = 1 - np.abs(corr)
+        hybrid = self.alpha * eucl + self.beta * corr_dist
+        hybrid_mean = hybrid.mean(axis=1)
+        cutoff = np.percentile(hybrid_mean, self.cutoff)
         all_idx = np.arange(data.shape[0])
-        kept_idx    = all_idx[keep_mask]
-        removed_idx = all_idx[~keep_mask]
+        keep_mask = np.isin(all_idx, keep)
 
-        # --- 4) Make a two‐panel figure if requested ---
         if self.plot_dist or self.plot_traces:
             plt.figure(figsize=self.figsize)
-
-            # Panel A: hybrid‐distance vs channel
             if self.plot_dist:
                 ax1 = plt.subplot2grid((3,1), (0,0), rowspan=1)
-                ax1.plot(all_idx, dists, 'o-', alpha=0.7, label='distance')
-                ax1.axhline(cutoff, color='k', ls='--',
-                            label=f'{self.cutoff_percentile}th pct = {cutoff:.3g}')
-                ax1.scatter(removed_idx, dists[removed_idx],
-                            c='red',    s=50, label='removed')
-                ax1.scatter(kept_idx,    dists[kept_idx],
-                            c='darkcyan', s=50, label='kept')
+                ax1.plot(all_idx, hybrid_mean, 'o-', alpha=0.7, label='distance')
+                ax1.axhline(cutoff, color='k', ls='--', label=f'{self.cutoff}th pct')
+                ax1.scatter(all_idx[~keep_mask], hybrid_mean[~keep_mask], c='red', s=50, label='removed')
+                ax1.scatter(all_idx[keep_mask], hybrid_mean[keep_mask], c='darkcyan', s=50, label='kept')
                 ax1.set_ylabel('Hybrid distance')
-                ax1.set_title(f'RemoveBadStep (α={self.alpha},β={self.beta})')
                 ax1.legend(ncol=2)
-
-            # Panel B: overlaid raw‐trace plot
             if self.plot_traces:
-                # compute time axis & window mask
                 n_samps = data.shape[1]
-                t = np.arange(n_samps) / fs
+                t = np.arange(n_samps) / session.sampling_rate
                 win_mask = t < self.trace_window_sec
                 t_win = t[win_mask]
-
                 ax2 = plt.subplot2grid((3,1), (1,0), rowspan=2)
-                # choose a reference for offset
-                if kept_idx.size:
-                    ref = data[kept_idx[0], win_mask]
-                else:
-                    ref = data[0, win_mask]
+                ref = data[keep[0], win_mask] if keep else data[0, win_mask]
                 offset = np.ptp(ref) * 1.2 or 1.0
-
                 for ch in all_idx:
                     trace = data[ch, win_mask]
-                    # safe normalize
                     centered = trace - np.mean(trace)
                     peak = np.max(np.abs(centered))
-                    if peak < 1e-12:
-                        normed = np.zeros_like(centered)
-                    else:
-                        normed = centered / peak * offset
-
+                    normed = centered / peak * offset if peak >= 1e-12 else np.zeros_like(centered)
                     y = normed + ch * offset
                     color = 'darkcyan' if keep_mask[ch] else 'red'
-                    ax2.plot(t_win, y, lw=3, alpha=0.7, color=color)
-
+                    ax2.plot(t_win, y, lw=2, color=color)
                 ax2.set_yticks(all_idx * offset)
                 ax2.set_yticklabels([f"Ch {i}" for i in all_idx])
-                ax2.set_xlabel("Time (s)")
-                ax2.set_title(f"Raw traces (first {self.trace_window_sec:.2f}s), "
-                              "darkcyan=kept, red=removed")
-
+                ax2.set_xlabel('Time (s)')
             plt.tight_layout()
             plt.show()
 
-        # --- 5) Return exactly what the base class does ---
-        return kept_data, keep_mask
+        return session
 
 
 class ReReferenceStep(SessionStep):
@@ -476,18 +400,17 @@ class EpochStep(SessionStep):
 # --- Core Preprocessor ---
 
 class Preprocessor:
-    """Apply a user-defined sequence of SessionStep instances with robust QC support."""
-    def __init__(self, experiment: str, sessions: List[Session], steps: List[SessionStep], destination: Optional[str] = None, summary_rate: int = 1):
+    """Apply a user-defined sequence of SessionStep instances."""
+    def __init__(self, experiment: str, sessions: List[Session], steps: List[SessionStep], destination: Optional[str] = None, raw_downsample_factor: int = 1):
         self.experiment = experiment
         self.sessions = sessions
         self.steps = steps
         self.destination = destination or os.getcwd()
-        self.summary_rate = summary_rate
+        self.raw_downsample_factor = int(raw_downsample_factor)
         self.processed: List[Session] = []
 
     def preprocess(self, parallel: bool = False, n_jobs: Optional[int] = None, export: bool = False) -> List[Session]:
         for session in self.sessions:
-            setattr(session, 'summary_rate', self.summary_rate)
             if session.raw is None and session.data is not None:
                 session.raw = session.data
             session.preprocessed = None
@@ -513,6 +436,13 @@ class Preprocessor:
                 self.processed.append(res)
             progress.run(self.sessions, label="Preprocessing", func=wrapped_apply)
 
+        # downsample raw data after preprocessing for memory efficiency
+        if self.raw_downsample_factor > 1:
+            for session in self.processed:
+                if session.raw is not None:
+                    session.raw = decimate(session.raw, self.raw_downsample_factor, axis=1, ftype='fir', zero_phase=True)
+                    session.sampling_rate = session.sampling_rate // self.raw_downsample_factor
+
         if export:
             try:
                 path = os.path.join(self.destination, f"{self.experiment} PREPROCESSED.pkl")
@@ -522,3 +452,4 @@ class Preprocessor:
                 logger.error(f"Failed to export processed sessions: {e}")
 
         return self.processed
+
