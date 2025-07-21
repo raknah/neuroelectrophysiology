@@ -1,3 +1,5 @@
+.DS_Store
+
 # EEG / BioSignal formats
 *.eeg
 *.vhdr
@@ -6,3 +8,4 @@
 *.tsy
 *.xml
 *.iml
+*.pyc
