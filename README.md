@@ -1,87 +1,142 @@
-# Open Ephys Extract
+# OpenEphys Extract
 
-## Overview
-`openephysextract` offers a streamlined workflow for loading, cleaning and exploring data recorded with the [Open Ephys](https://open-ephys.org/) system. The package converts raw acquisitions into easy-to-handle `Trial` objects and exposes utilities for preprocessing, interactive visualisation and basic analysis.
+A Python package for convenient extraction and analysis of OpenEphys data, with a focus on motor-evoked potentials and resting state analysis.
 
-Key components include:
+## Features
 
-- **Extractor** – reads continuous Open Ephys folders and builds `Trial` objects containing the raw samples.
-- **Preprocessor** – applies modular steps (bad channel removal, filtering, event compilation, epoching and downsampling) to a list of trials.
-- **Viewer** – Jupyter widget for browsing trials, detecting MEP peaks and classifying each trial as accepted, review or rejected.
-- **Analysis & Plotting** – convenience functions for band power extraction, logistic scaling and displaying raw signals, spectrograms and PSDs.
+- **Data Extraction**: Load and handle OpenEphys recording data
+- **Preprocessing Pipeline**: Comprehensive preprocessing tools listed below
+- **Analysis Tools**: Including bandpower analysis and state-space modeling
+- **Utility Functions**: Save/load operations, spreadsheet handling
+- **Easy to Use**: Simple API for quick integration into your analysis workflows
 
-The examples below demonstrate a minimal workflow.
+Requires Python 3.8 or later.
 
-## Quickstart
-Below is a condensed version of the workflow found in the *5xFAD Resting State EEG* notebook.
-It demonstrates how to configure destination folders for extracted and processed data.
+## Quick Start
 
 ```python
-import os
-import pickle
+from openephysextract import Session, Preprocessor
 
-from openephysextract import Extractor, Preprocessor, Viewer
-from openephysextract.preprocess import (
-    RemoveBadStep, DownsampleStep, FilterStep, EpochStep,
-)
-from openephysextract.analysis import bandpower, logistic_scaler
-from openephysextract.utilities import savify
+# Load a session
+session = Session(
+                session="session_name",
+                experiment="experiment_name",
+                source="data_path",
+                sampling_rate=30000,
+                ch_names= [2,4,5,9],
+            )
 
-# ---- paths ----
-source = "/path/to/open_ephys_sessions"  # folder with session directories
-channels = [3, 4, 5, 6, 7, 8]             # indices of data channels to load
-sampling_rate = 30000                     # original acquisition rate in Hz
+# Create a preprocessing pipeline
+preprocessor = Preprocessor([
+    "RemoveBadStep",
+    "FilterStep",
+    "EpochStep"
+])
 
-# folders used by the pipeline
-output_raw = os.path.join(source, "processed")      # extracted Trials saved here
-output_pp = "/path/to/resting-state-analysis"       # destination for preprocessing outputs
+# Process your data
+processed_data = preprocessor.run(session)
+```
+## Resting State Analysis Workflow
 
-# ---- extraction ----
+Here's a typical workflow for resting state analysis:
+
+1. **Data Extraction** from OpenEphys Recordings
+```python
+from openephysextract import Extractor
+
 extractor = Extractor(
-    source=source,           # base folder of Open Ephys files
-    channels=channels,       # channel indices to include
-    sampling_rate=sampling_rate,  # sampling rate of recordings
-    output=output_raw,       # where to store raw Trial objects
+    source="data_path",
+    experiment="experiment_name",
+    sampling_rate=30000,
+    output="output_path",
+    channels=[3, 4, 5, 6, 7, 8]  # Example channels
 )
-trials = extractor.extractify(export=True)  # returns a list of Trial objects
 
-# reload the pickled trials if needed
-with open(os.path.join(output_raw, "raw_data.pkl"), "rb") as f:
-    trials = pickle.load(f)
+raw_data = extractor.extractify(export=True)
+```
+2. **Preprocessing Pipeline**
+```python
+from openephysextract.preprocess import (
+    Preprocessor, RemoveBadStep, FilterStep, 
+    DownsampleStep, EpochStep
+)
 
-# ---- preprocessing ----
 steps = [
-    RemoveBadStep(alpha=0.3, beta=0.7),  # remove noisy channels
-    DownsampleStep(target_fs=300),       # decimate to 300 Hz
-    FilterStep(lowcut=0.1, highcut=80, order=4),  # band-pass filter
-    EpochStep(frame=300, stride=30),     # segment into 300‑sample windows
+    RemoveBadStep(std=True, alpha=0.5, beta=0.5, cutoff_pct=90),
+    FilterStep(lowcut=0.1, highcut=80, order=4),
+    DownsampleStep(target_fs=100),
+    EpochStep(frame=100, stride=10)  # 1s epochs with 90% overlap
 ]
-processor = Preprocessor(
-    trials=trials,
-    steps=steps,
-    destination=output_pp,   # where processed trials will be saved
-)
-processed = processor.preprocess(parallel=False, export=True)
 
-# ---- visualise ----
-Viewer(processed, sampling_rate=300).classifier()  # interactive labelling widget
+preprocessor = Preprocessor(steps=steps)
+preprocessed = preprocessor.preprocess(raw_data)
+```
+3. **Analysis**
 
-# ---- analysis ----
-features = [bandpower(trial) for trial in processed]  # extract spectral power
-savify(features, output_pp, "features")
+   - Bandpower analysis
+   - State-space modeling (e.g., Beta-HMM for dynamical analysis)
+   - Statistical comparisons between conditions
 
-scaled = [logistic_scaler(trial) for trial in features]  # logistic normalisation
-savify(scaled, output_pp, "logistic-scaled")
+## Core Components
+
+### Session
+The `Session` class is your entry point for working with OpenEphys data. It handles data loading and provides a consistent interface for the preprocessing pipeline.
+
+### Preprocessor
+The `Preprocessor` class manages the preprocessing pipeline. You can chain multiple preprocessing steps together to create your desired workflow.
+
+#### Session Step
+You can also use the `SessionStep` to define custom preprocessing steps to a session object, allowing for a more personalised workflow.
+
+```python
+class SessionStep(ABC):
+    """Abstract preprocessing step for EEG sessions."""
+    @abstractmethod
+    def apply(self, session: Session, device: torch.device) -> None:
+        """Mutate session.raw/preprocessed/data on `device`."""
+        ...
+
+    def preferred_device(self, default: torch.device) -> torch.device:
+        return default  # override in subclasses as needed
 ```
 
-## Installation
-The project requires Python 3.8+. Install directly from the repository:
-```bash
-pip install git+https://github.com/raknah/motor-evoked-potentials-analysis
-```
+### Extractor
+The `Extractor` class provides tools for extracting specific data segments and features from your processed sessions.
+
+## Available Preprocessing Steps
+
+- `RemoveBadStep`: Remove bad channels
+- `DetrendStep`: Remove signal trends
+- `ASRStep`: Artifact Subspace Reconstruction
+- `EOGRegressionStep`: EOG artifact regression
+- `InterpolateStep`: Channel interpolation
+- `EventCompileStep`: Event handling
+- `ReReferenceStep`: Signal re-referencing
+- `FilterStep`: Signal filtering
+- `SurfaceLaplacianStep`: Surface Laplacian transformation
+- `EpochStep`: Data epoching
+- `ArtifactRejectStep`: Artifact rejection
+- `DownsampleStep`: Signal downsampling
+- `ICARemovalStep`: ICA-based artifact removal
+
+## Utility Functions
+
+- `savify`: Save processed data
+- `loadify`: Load saved data
+- `spreadsheet`: Spreadsheet operations
+- `bandpower`: Compute signal bandpower
 
 ## License
-Released under the MIT license.
+
+This project is licensed under the MIT License.
+
+## Author
+
+Aswinshankar Sivalingam
 
 ## Acknowledgments
-Special thanks to Dr. Nikolas Perentos for providing the initial data and insight for the development of this package.
+
+This package is built on the foundation of OpenEphys data handling and analysis, leveraging existing libraries and tools for efficient processing and analysis of electrophysiological data. 
+
+I'd also like to thank Dr. Perentos for his guidance and support in understanding the neuroelectrophysiology workflows that led to the development of this package.
+```
