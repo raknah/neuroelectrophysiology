@@ -11,6 +11,7 @@ dist/
 # Temporary files
 *.tmp
 .DS_Store
+.idea
 .vscode/settings.json
 
 # Cache directories
