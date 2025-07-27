@@ -1,142 +1,176 @@
-# OpenEphys Extract
+# Neuroelectrophysiology Framework 
 
-A Python package for convenient extraction and analysis of OpenEphys data, with a focus on motor-evoked potentials and resting state analysis.
+A comprehensive, polyglot toolkit for extracting, processing, and analyzing neuroelectrophysiology data from Open Ephys recordings. This repository provides both **Python** and **Julia** implementations for maximum flexibility and performance in neuroscience research workflows.
 
-## Features
+## Purpose
 
-- **Data Extraction**: Load and handle OpenEphys recording data
-- **Preprocessing Pipeline**: Comprehensive preprocessing tools listed below
-- **Analysis Tools**: Including bandpower analysis and state-space modeling
-- **Utility Functions**: Save/load operations, spreadsheet handling
-- **Easy to Use**: Simple API for quick integration into your analysis workflows
+This framework is designed for:
+- **Motor Evoked Potential (MEP)** analysis and characterization
+- **EEG/MEG signal processing** with advanced preprocessing pipelines
+- **Cross-language compatibility** between Python and Julia ecosystems
+- **High-performance analysis** leveraging Julia's speed and Python's ecosystem
+- **Reproducible research** with version-controlled analysis pipelines
 
-Requires Python 3.8 or later.
+## Architecture
 
-## Quick Start
+```
+neuroelectrophysiology/
+├── modules/
+│   ├── openephysextract/          # Python package for data extraction & processing
+│   │   ├── session.py             # Python Session class
+│   │   ├── preprocess.py          # Preprocessing pipeline (PyTorch accelerated)
+│   │   ├── analysis.py            # Spectral analysis tools
+│   │   ├── extractor.py           # Open Ephys data extraction
+│   │   └── pyproject.toml         # Python dependencies
+│   └── sessionIO/                 # Julia package for high-performance analysis
+│       ├── SessionIO.jl           # Julia Session struct
+│       └── testSessionIO.jl       # Julia tests
+├── data/                          # Shared experimental data (HDF5 format)
+├── notebooks/                     # Analysis notebooks (Jupyter & Pluto)
+├── scripts/                       # Utility scripts and converters
+└── Project.toml                   # Julia project configuration
+```
 
-```python
-from openephysextract import Session, Preprocessor
+## Key Features
+
+### Python Module (`openephysextract`)
+- **Open Ephys Integration**: Direct extraction from Open Ephys recording sessions
+- **GPU-Accelerated Processing**: PyTorch-based preprocessing pipeline with CUDA support
+- **Advanced Preprocessing**: ASR, ICA, filtering, epoching, artifact rejection
+- **Interactive Visualization**: Dash-based web interface for data exploration
+
+### Julia Module (`SessionIO`)
+- **High-Performance Loading**: Optimized HDF5 reading with proper memory layout
+- **Type-Stable Operations**: Full type annotations for maximum Julia performance
+- **Cross-Language Compatibility**: Seamlessly loads Python-generated HDF5 files
+- **Memory Efficient**: Float32 arrays and column-major optimization
+- **Functional Interface**: Immutable operations with convenient accessors
+
+### Shared Data Format
+- **HDF5 Standard**: Universal format readable by both languages
+- **Rich Metadata**: JSON-encoded processing history, statistics, and annotations
+- **Flexible Schema**: Supports raw, preprocessed, and epoched data arrays
+- **Version Controlled**: Schema versioning for backward compatibility
+
+## Installation
+
+### Julia Environment
+```julia
+# From the repository root
+julia --project=.
+]activate .
+]instantiate
+```
+
+### Python Environment
+```bash
+# Install the openephysextract package
+cd modules/openephysextract
+pip install -e .
+
+# Or with conda
+conda env create -f environment.yml
+conda activate neuroelectrophysiology
+```
+
+## 🔬 Quick Start
+
+### Loading Data in Julia
+```julia
+using Pkg; Pkg.activate(".")
+include("modules/sessionIO/SessionIO.jl")
 
 # Load a session
-session = Session(
-                session="session_name",
-                experiment="experiment_name",
-                source="data_path",
-                sampling_rate=30000,
-                ch_names= [2,4,5,9],
-            )
+session = from_hdf5("data/2023-08-25_14-20-15.h5")
 
-# Create a preprocessing pipeline
+# Access data
+println("Session: $(session.session)")
+println("Shape: $(size(session))")
+println("Duration: $(duration(session)) seconds")
+
+# Index into epoched data
+first_epoch = session[:, :, 1]  # All samples, all channels, first epoch
+```
+
+### Processing Data in Python
+```python
+from modules.openephysextract import Session, Preprocessor
+from modules.openephysextract import FilterStep, EpochStep
+
+# Load raw Open Ephys data
+session = Session.from_open_ephys("path/to/recording")
+
+# Create preprocessing pipeline
 preprocessor = Preprocessor([
-    "RemoveBadStep",
-    "FilterStep",
-    "EpochStep"
+    FilterStep(lowcut=1.0, highcut=100.0),
+    EpochStep(pre_stimulus=0.1, post_stimulus=0.5)
 ])
 
-# Process your data
-processed_data = preprocessor.run(session)
+# Process and save
+session = preprocessor.apply(session)
+session.to_hdf5("processed_session.h5")
 ```
-## Resting State Analysis Workflow
 
-Here's a typical workflow for resting state analysis:
-
-1. **Data Extraction** from OpenEphys Recordings
+### Cross-Language Workflow
 ```python
-from openephysextract import Extractor
-
-extractor = Extractor(
-    source="data_path",
-    experiment="experiment_name",
-    sampling_rate=30000,
-    output="output_path",
-    channels=[3, 4, 5, 6, 7, 8]  # Example channels
-)
-
-raw_data = extractor.extractify(export=True)
-```
-2. **Preprocessing Pipeline**
-```python
-from openephysextract.preprocess import (
-    Preprocessor, RemoveBadStep, FilterStep, 
-    DownsampleStep, EpochStep
-)
-
-steps = [
-    RemoveBadStep(std=True, alpha=0.5, beta=0.5, cutoff_pct=90),
-    FilterStep(lowcut=0.1, highcut=80, order=4),
-    DownsampleStep(target_fs=100),
-    EpochStep(frame=100, stride=10)  # 1s epochs with 90% overlap
-]
-
-preprocessor = Preprocessor(steps=steps)
-preprocessed = preprocessor.preprocess(raw_data)
-```
-3. **Analysis**
-
-   - Bandpower analysis
-   - State-space modeling (e.g., Beta-HMM for dynamical analysis)
-   - Statistical comparisons between conditions
-
-## Core Components
-
-### Session
-The `Session` class is your entry point for working with OpenEphys data. It handles data loading and provides a consistent interface for the preprocessing pipeline.
-
-### Preprocessor
-The `Preprocessor` class manages the preprocessing pipeline. You can chain multiple preprocessing steps together to create your desired workflow.
-
-#### Session Step
-You can also use the `SessionStep` to define custom preprocessing steps to a session object, allowing for a more personalised workflow.
-
-```python
-class SessionStep(ABC):
-    """Abstract preprocessing step for EEG sessions."""
-    @abstractmethod
-    def apply(self, session: Session, device: torch.device) -> None:
-        """Mutate session.raw/preprocessed/data on `device`."""
-        ...
-
-    def preferred_device(self, default: torch.device) -> torch.device:
-        return default  # override in subclasses as needed
+# Python: Extract and preprocess
+session = extract_open_ephys_data("raw_recording/")
+session = preprocess_pipeline(session)
+session.to_hdf5("processed.h5")
 ```
 
-### Extractor
-The `Extractor` class provides tools for extracting specific data segments and features from your processed sessions.
+```julia
+# Julia: Load and analyze
+session = from_hdf5("processed.h5")
+results = analyze_meps(session)
+save_results(results, "analysis_output.h5")
+```
 
-## Available Preprocessing Steps
+## Data Format Specification
 
-- `RemoveBadStep`: Remove bad channels
-- `DetrendStep`: Remove signal trends
-- `ASRStep`: Artifact Subspace Reconstruction
-- `EOGRegressionStep`: EOG artifact regression
-- `InterpolateStep`: Channel interpolation
-- `EventCompileStep`: Event handling
-- `ReReferenceStep`: Signal re-referencing
-- `FilterStep`: Signal filtering
-- `SurfaceLaplacianStep`: Surface Laplacian transformation
-- `EpochStep`: Data epoching
-- `ArtifactRejectStep`: Artifact rejection
-- `DownsampleStep`: Signal downsampling
-- `ICARemovalStep`: ICA-based artifact removal
+### HDF5 Structure
+```
+session.h5
+├── /raw                    # (samples, channels) - Raw continuous data
+├── /preprocessed           # (samples, channels) - Filtered/cleaned data  
+├── /data                   # (samples_per_epoch, channels, epochs) - Epoched data
+└── attributes:
+    ├── session             # Session identifier (string)
+    ├── experiment          # Experiment name (string)
+    ├── sampling_rate       # Sampling frequency (int)
+    ├── ch_names           # Channel names (JSON array)
+    ├── history            # Processing steps (JSON array)
+    ├── stats              # Analysis statistics (JSON object)
+    └── events             # Event annotations (JSON array)
+```
 
-## Utility Functions
+### Metadata Schema
+```json
+{
+  "session": "2023-08-25_14-20-15",
+  "experiment": "5xFAD Resting State",
+  "sampling_rate": 30000,
+  "ch_names": ["EMG1", "EMG2", "EEG1", "EEG2"],
+  "history": [
+    {"step": "filter", "params": {"lowcut": 1, "highcut": 100}, "time": "2023-08-25T14:21:00"},
+    {"step": "epoch", "params": {"pre": 0.1, "post": 0.5}, "time": "2023-08-25T14:22:00"}
+  ],
+  "stats": {
+    "epoch": {"n_epochs": 100, "rejected": 5},
+    "filter": {"lowcut": 1.0, "highcut": 100.0}
+  }
+}
+```
 
-- `savify`: Save processed data
-- `loadify`: Load saved data
-- `spreadsheet`: Spreadsheet operations
-- `bandpower`: Compute signal bandpower
-
-## License
-
-This project is licensed under the MIT License.
-
-## Author
-
-Aswinshankar Sivalingam
 
 ## Acknowledgments
 
-This package is built on the foundation of OpenEphys data handling and analysis, leveraging existing libraries and tools for efficient processing and analysis of electrophysiological data. 
+- **Dr Nikolas Perentos**: For introducing me to neuroelectrophysiology and guiding me through the initial stages of this project
+- **Open Ephys**: For the excellent open-source acquisition system
+- **Julia Community**: For the high-performance scientific computing ecosystem  
+- **Python Scientific Stack**: NumPy, SciPy, and the broader PyData ecosystem
+- **HDF5 Group**: For the universal scientific data format
 
-I'd also like to thank Dr. Perentos for his guidance and support in understanding the neuroelectrophysiology workflows that led to the development of this package.
-```
+---
+
+

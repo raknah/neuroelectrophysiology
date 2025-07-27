@@ -5,8 +5,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Optional
 from open_ephys.analysis import Session as OpenEphysSession
-
-from .utilities import TqdmProgressBar
+from tqdm import tqdm
 from .session import Session
 
 # Configure logging for extraction process
@@ -102,8 +101,8 @@ class Extractor:
 
             self.sessions.append(session)
 
-        progress = TqdmProgressBar()
-        progress.run(files, label="Extracting Sessions", func=_process)
+        for file in tqdm(files, desc="Extracting Sessions", unit="file"):
+            _process(file)
 
         if export:
             os.makedirs(self.output, exist_ok=True)

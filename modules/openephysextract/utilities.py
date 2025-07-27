@@ -1,9 +1,7 @@
-from tqdm.notebook import tqdm
 import os
 import pickle
 import json
 import dill
-import psutil
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -98,30 +96,6 @@ def loadify(name: str, location: str, obj_type: Optional[str] = None):
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
-class TqdmProgressBar:
-    """
-    Custom tqdm wrapper that shows memory usage and tracks the last processed item.
-    """
-    def __init__(self):
-        self.last_file = None
-
-    def run(self, iterable, label, func):
-        with tqdm(
-                iterable,
-                desc=label,
-                ncols=777,
-                bar_format="{l_bar}{bar} {n_fmt}/{total_fmt} [{rate_fmt}{postfix}]"
-        ) as progress:
-            for item in progress:
-                mem = psutil.Process(os.getpid()).memory_info().rss / 1024**2
-                progress.set_postfix({
-                    "Last": " " + str(self.last_file or '–')[:18],
-                    "Memory": f" {mem:.1f}MB"
-                })
-                func(item)
-                self.last_file = str(item)
-
-
 def spreadsheet(location, name, id, relevant, sheet = None):
     """
     Load a spreadsheet (CSV or Excel) and filter it by trial IDs.
@@ -149,3 +123,35 @@ def spreadsheet(location, name, id, relevant, sheet = None):
     df = df[df[id].isin(relevant)]
 
     return df.reset_index(drop=True)
+
+import logging
+import tempfile
+import subprocess
+from tqdm import tqdm as std_tqdm
+from tqdm.notebook import tqdm as notebook_tqdm
+
+class TqdmLoggingHandler(logging.Handler):
+    def emit(self, record):
+        pass  # suppress all logs in notebook
+
+def start_log_terminal(logfile: str):
+    terminal_cmds = [
+        ["x-terminal-emulator", "-e", f"tail -f {logfile}"],
+        ["xterm", "-e", f"tail -f {logfile}"],
+        ["gnome-terminal", "--", "tail", "-f", logfile],
+        ["konsole", "-e", "tail", "-f", logfile],
+        ["mate-terminal", "-e", f"tail -f {logfile}"],
+        ["open", "-a", "Terminal", logfile],
+    ]
+    for cmd in terminal_cmds:
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except FileNotFoundError:
+            continue
+    print("⚠️ Could not open external terminal window.")
+
+
+
+
+
