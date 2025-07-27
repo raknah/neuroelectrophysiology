@@ -1,6 +1,7 @@
 .DS_Store
 
 # EEG / BioSignal formats
+*.h5
 *.eeg
 *.vhdr
 *.vmrk
