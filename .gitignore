@@ -1,13 +1,17 @@
-.DS_Store
-
-# EEG / BioSignal formats
-*.h5
-*.eeg
-*.vhdr
-*.vmrk
-*.edf
-*.tsy
-*.xml
-*.iml
-*.pyc*.pyc
+# Python build artifacts
+*.egg-info/
 __pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+.eggs/
+
+# Temporary files
+*.tmp
+.DS_Store
+.vscode/settings.json
+
+# Cache directories
+/tmp/
+*.cache
