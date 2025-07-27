@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Simple 5xFAD Processing - Direct from Notebook Workflow
+Simple 5xFAD Processing - One-Click Script
 
-A minimal script that replicates the exact notebook workflow:
-1. Extract sessions
+1. Extract Open Ephys sessions
 2. Preprocess with standard pipeline  
-3. Save to HDF5
+3. Save to HDF5 for Julia analysis
 
-Edit the paths below and run: python simple_extract.py
+Just edit the paths below and run: python simple_extract.py
 """
 
 import sys
@@ -15,13 +14,9 @@ import os
 from pathlib import Path
 
 # Add the modules directory to Python path
-script_dir = Path(__file__).parent.parent  # Go up to neuroelectrophysiology/
+script_dir = Path(__file__).parent.parent
 modules_dir = script_dir / "modules"
 sys.path.insert(0, str(modules_dir))
-
-# Verify the path exists
-if not modules_dir.exists():
-    raise FileNotFoundError(f"Modules directory not found: {modules_dir}")
 
 from openephysextract.extractor import Extractor
 from openephysextract.preprocess import (
