@@ -17,3 +17,5 @@ dist/
 # Cache directories
 /tmp/
 *.cache
+
+**/data/*
