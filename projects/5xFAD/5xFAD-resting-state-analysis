@@ -1,0 +1,53 @@
+### A Pluto.jl notebook ###
+# v0.20.13
+
+using Markdown
+using InteractiveUtils
+
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    #! format: off
+    return quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+    #! format: on
+end
+
+# ╔═╡ 25880fe8-6b70-11f0-344e-67b9736793c7
+begin
+	using Pkg
+	Pkg.activate("../..")
+	Pkg.status()
+	# include("../../modules/sessionIO/SessionIO.jl")
+end
+
+# ╔═╡ 5a02eb8c-ef74-4f80-91d1-fe49b1f63306
+using PlutoUI
+
+# ╔═╡ 9387fec9-f301-47dc-b346-dabc68c3f6ba
+sessions = begin
+	datapath = "5xFAD-resting-state-preprocessed"
+	files = readdir(datapath)
+	[from_hdf5(joinpath(datapath, file)) for file in files]
+end
+
+# ╔═╡ e84a8519-c92b-4db2-9e8f-4553a04f1890
+begin
+	_session = @bind session Select(files)
+	md"""
+	Select a session: $(_session)
+	"""
+end
+
+# ╔═╡ 2b95079c-bb14-4c04-ba8f-63c23dd3c4ff
+
+
+# ╔═╡ Cell order:
+# ╠═25880fe8-6b70-11f0-344e-67b9736793c7
+# ╟─9387fec9-f301-47dc-b346-dabc68c3f6ba
+# ╠═5a02eb8c-ef74-4f80-91d1-fe49b1f63306
+# ╟─e84a8519-c92b-4db2-9e8f-4553a04f1890
+# ╠═2b95079c-bb14-4c04-ba8f-63c23dd3c4ff
