@@ -110,11 +110,22 @@ class InterpolateStep(SessionStep):
             arr = torch.from_numpy(arr.astype(np.float32))
 
         arr = arr.cpu().numpy()
-        bad = set(range(arr.shape[0])) - set(getattr(session, 'good_channels', []))
+        # Get current array dimension and available good_channels
+        current_n_channels = arr.shape[0]
+        current_good_channels = getattr(session, 'good_channels', list(range(current_n_channels)))
+        
+        # Find bad channels: those not in good_channels OR beyond current array size
+        all_channels = set(range(current_n_channels))
+        good_channels_valid = set(ch for ch in current_good_channels if ch < current_n_channels)
+        bad = all_channels - good_channels_valid
+        
         for ch in bad:
             neigh = self.neighbors.get(ch, [])
-            if neigh:
-                arr[ch] = arr[neigh].mean(axis=0)
+            # Only use neighbors that exist in current array
+            valid_neigh = [n for n in neigh if n < current_n_channels]
+            if valid_neigh:
+                arr[ch] = arr[valid_neigh].mean(axis=0)
+        
         out = torch.from_numpy(np.ascontiguousarray(arr.astype(np.float32))).to(device)
         session.preprocessed = out.cpu().numpy() if was_numpy else out
         session.stats['interpolate'] = {'bad_channels': list(bad)}
@@ -133,7 +144,8 @@ class FilterStep(SessionStep):
         return torch.device('cpu')
 
     def apply(self, session: Session, device):
-        arr = session.raw
+        # Use preprocessed data if available, otherwise use raw
+        arr = session.preprocessed if session.preprocessed is not None else session.raw
         was_numpy = isinstance(arr, np.ndarray)
         if not was_numpy:
             arr = arr.detach().cpu().numpy()
@@ -178,6 +190,7 @@ class DownsampleStep(SessionStep):
         return torch.device('cpu')
 
     def apply(self, session: Session, device):
+        # For processing, use preprocessed data if available, otherwise raw
         arr = session.preprocessed if session.preprocessed is not None else session.raw
         was_numpy = isinstance(arr, np.ndarray)
         if not was_numpy:
@@ -185,16 +198,29 @@ class DownsampleStep(SessionStep):
 
         orig_fs = session.sampling_rate
         factor = max(1, orig_fs // self.target_fs)
+        
+        # Downsample the processing data
         if factor > 1:
             arr = decimate(arr, factor, axis=1, ftype='fir', zero_phase=True)
-            session.sampling_rate = orig_fs // factor
+        
+        # Update sampling rate based on actual factor used
+        session.sampling_rate = orig_fs // factor
 
         arr = np.nan_to_num(arr).astype(np.float32)
         tensor = torch.from_numpy(arr).to(device)
+        
+        # Conditionally downsample raw data if requested (default True for file size management)
+        # IMPORTANT: Always downsample from the ORIGINAL raw data, not from preprocessed
         if self.downsample_raw:
-            session.raw = arr  # store as NumPy
+            raw_data = session.raw
+            if factor > 1:
+                raw_downsampled = decimate(raw_data, factor, axis=1, ftype='fir', zero_phase=True)
+                session.raw = np.nan_to_num(raw_downsampled).astype(np.float32)
+            else:
+                session.raw = np.nan_to_num(raw_data).astype(np.float32)
+        
         session.preprocessed = tensor.cpu().numpy() if was_numpy else tensor
-        session.stats['downsample'] = {'factor': factor}
+        session.stats['downsample'] = {'factor': factor, 'orig_fs': orig_fs, 'new_fs': session.sampling_rate}
         session.log_step(self)
 
 
@@ -243,22 +269,66 @@ class RemoveBadStep(SessionStep):
             arr = torch.from_numpy(arr.astype(np.float32))
 
         arr = arr.to(device)
+        
+        # Record original channel count BEFORE processing
+        n_channels_before = arr.size(0)
+        
+        # Skip if too few channels
+        if n_channels_before < 2:
+            session.good_channels = list(range(n_channels_before))
+            session.stats['remove_bad'] = {'before': n_channels_before, 'after': n_channels_before, 'removed': 0}
+            session.log_step(self)
+            return
+        
         stds = arr.std(dim=1, keepdim=True).clamp(min=1e-6)
         means = arr.mean(dim=1, keepdim=True)
         normed = (arr - means) / stds if self.std else arr
+        
+        # Compute distance matrix
         D = torch.cdist(normed, normed)
-        D = (D - D.min()) / (D.max() - D.min()) if D.max() != D.min() else D
-        C = 1 - torch.corrcoef(normed).abs()
+        if D.max() != D.min():
+            D = (D - D.min()) / (D.max() - D.min())
+        
+        # Compute correlation matrix (handle potential NaN/Inf)
+        try:
+            corr_matrix = torch.corrcoef(normed)
+            # Replace NaN/Inf with 0
+            corr_matrix = torch.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+            C = 1 - corr_matrix.abs()
+        except Exception:
+            # Fallback: use identity-based correlation if corrcoef fails
+            C = torch.zeros_like(D)
+        
+        # Combine distance and correlation
         H = self.alpha * D + self.beta * C
-        H.fill_diagonal_(1)
+        H.fill_diagonal_(1.0)
+        
+        # Compute channel scores
         scores = H.mean(dim=1)
         thresh = torch.quantile(scores, self.cutoff / 100.0)
-        keep = (scores <= thresh).nonzero(as_tuple=False).squeeze()
-
-        arr = arr[keep]
-        session.preprocessed = arr.cpu().numpy() if was_numpy else arr
-        session.good_channels = keep.cpu().tolist()
-        session.stats['remove_bad'] = {'before': arr.size(0), 'after': keep.numel()}
+        keep_mask = scores <= thresh
+        keep_indices = keep_mask.nonzero(as_tuple=False).squeeze()
+        
+        # Handle edge cases for keep indices
+        if keep_indices.dim() == 0:  # Single channel kept
+            keep_indices = keep_indices.unsqueeze(0)
+        elif len(keep_indices) == 0:  # No channels kept (shouldn't happen with 90th percentile)
+            keep_indices = torch.arange(min(1, n_channels_before), device=device)
+        
+        # Apply channel selection
+        arr_filtered = arr[keep_indices]
+        session.preprocessed = arr_filtered.cpu().numpy() if was_numpy else arr_filtered
+        
+        # good_channels should contain the original array indices that were kept
+        session.good_channels = keep_indices.cpu().tolist()
+        
+        # Record accurate statistics
+        n_channels_after = len(keep_indices)
+        session.stats['remove_bad'] = {
+            'before': n_channels_before, 
+            'after': n_channels_after,
+            'removed': n_channels_before - n_channels_after
+        }
         session.log_step(self)
 
 
@@ -270,6 +340,9 @@ class EpochStep(SessionStep):
 
     def apply(self, session: Session, device):
         arr = session.preprocessed
+        if arr is None:
+            raise ValueError("EpochStep requires preprocessed data. Ensure preprocessing steps are run before epoching.")
+            
         was_numpy = isinstance(arr, np.ndarray)
         if was_numpy:
             arr = torch.from_numpy(arr.astype(np.float32))
@@ -283,7 +356,7 @@ class EpochStep(SessionStep):
             ep = ep - baseline
 
         session.data = ep.cpu().numpy() if was_numpy else ep
-        session.stats['epoch'] = {'n_epochs': ep.size(0)}
+        session.stats['epoch'] = {'n_epochs': ep.size(0), 'frame': self.frame, 'stride': self.stride}
         session.log_step(self)
 
 
@@ -521,7 +594,8 @@ class Preprocessor:
             new.group = orig.group
             new.events = list(orig.events) if orig.events else None
             new.history, new.stats = [], {}
-            new.good_channels = None
+            # Initialize good_channels to all channels initially
+            new.good_channels = list(range(orig.raw.shape[0]))
 
             new.preprocessed = new.raw.astype(np.float32)
             new.data = None

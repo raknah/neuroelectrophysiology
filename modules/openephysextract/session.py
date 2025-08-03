@@ -20,7 +20,7 @@ class Session:
         'location', 'ch_names', 'montage',
         'notes', 'group', 'events', 'stats', 'history',
         'states', 'ica_model', 'ica_sources', 'bad_ics',
-        'good_channels', 'schema_version'
+        'good_channels', 'original_channels', 'schema_version'
     )
 
     def __init__(
@@ -34,6 +34,7 @@ class Session:
         ch_names: Optional[List[str]] = None,
         montage: Optional[np.ndarray] = None,
         location: Optional[str] = None,
+        original_channels: Optional[List[int]] = None,
     ):
         """
         Initialize a Session.
@@ -48,6 +49,7 @@ class Session:
             ch_names: Optional channel labels.
             montage: Optional electrode positions as (n_channels, 3) array.
             location: Recording location descriptor.
+            original_channels: Original channel indices from hardware (e.g., [3,4,5,6,7,8]).
         """
         # Metadata
         self.session = session
@@ -72,6 +74,7 @@ class Session:
         self.ch_names = ch_names or []
         self.montage = montage
         self.location = location
+        self.original_channels = original_channels
 
         # Provenance & analysis metadata
         self.notes: Dict[str, Any] = {'schema_version': self.schema_version}
@@ -166,6 +169,7 @@ class Session:
             'stats': self.stats,
             'history': self.history,
             'good_channels': self.good_channels,
+            'original_channels': self.original_channels,
             'bad_ics': self.bad_ics
         }
 
@@ -216,6 +220,7 @@ class Session:
         sess.stats = meta.get('stats', {})
         sess.history = meta.get('history', [])
         sess.good_channels = meta.get('good_channels')
+        sess.original_channels = meta.get('original_channels')
         sess.bad_ics = meta.get('bad_ics')
         return sess
 

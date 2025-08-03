@@ -21,11 +21,12 @@ begin
 	using Pkg
 	Pkg.activate("../..")
 	Pkg.status()
-	# include("../../modules/sessionIO/SessionIO.jl")
+	include("../../modules/sessionIO/SessionIO.jl")
+	include("../../../zzz configs/custom/plotify.jl")
 end
 
 # ╔═╡ 5a02eb8c-ef74-4f80-91d1-fe49b1f63306
-using PlutoUI
+using PlutoUI, CairoMakie
 
 # ╔═╡ 9387fec9-f301-47dc-b346-dabc68c3f6ba
 sessions = begin
@@ -36,13 +37,74 @@ end
 
 # ╔═╡ e84a8519-c92b-4db2-9e8f-4553a04f1890
 begin
-	_session = @bind session Select(files)
+	_selection = @bind selection Select(files)
 	md"""
-	Select a session: $(_session)
+	Select a session: $(_selection)
 	"""
 end
 
-# ╔═╡ 2b95079c-bb14-4c04-ba8f-63c23dd3c4ff
+# ╔═╡ 6c57d52d-f95d-47fa-ac11-7fe9a25187e9
+begin
+	name = splitext(selection)[1]
+	matching = filter(s -> s.session == name, sessions)
+	if isempty(matching)
+		error("no session found with ID: $selection")
+	elseif length(matching) > 1
+		@warn "Multiple sessions found with ID: $selection"
+	end
+	session = first(matching)
+	nothing
+end
+
+# ╔═╡ f136b7f4-ad91-4631-8649-c04290106a0b
+md"""
+## Session Information
+"""
+
+# ╔═╡ 6114a022-4a23-4482-9261-2a77d40ce426
+md"""
+### Raw EEG
+"""
+
+# ╔═╡ 017a7aeb-96f2-4670-8aec-6579b5b60480
+begin
+	_range = @bind range RangeSlider(1:32000; default=1:1000, show_value=true)
+	md"""
+	Select Sample Range: $(_range)
+	"""
+end
+
+# ╔═╡ 7f7b629f-db0b-4292-824d-b63675f05b84
+begin
+	fig = Figure(size = (900, 450))
+	ax = plotify(
+		fig,
+		position = [1,1],
+		title = "Resting State EEG (RAW)",
+		xlabel = "Time (ms)",
+		ylabel = "Amplitude"
+	)
+	
+	sample_range = first(range):last(range)
+	time_ms = (sample_range .- 1) .* 10
+		
+	for channel in 1:size(session.raw)[1]
+		lines!(
+			ax,
+			time_ms,
+			session.raw[channel, sample_range],
+			color = channel in session.good_channels ? (:darkcyan, 0.7) : (:red, 0.7)
+		)
+	end
+	fig
+end
+
+# ╔═╡ 7a8bf2fa-aa16-4e61-9074-849f0302e517
+md"""
+### Bandpower
+"""
+
+# ╔═╡ 8a36cab8-46f0-4556-98ec-8cd706c3be6c
 
 
 # ╔═╡ Cell order:
@@ -50,4 +112,10 @@ end
 # ╟─9387fec9-f301-47dc-b346-dabc68c3f6ba
 # ╠═5a02eb8c-ef74-4f80-91d1-fe49b1f63306
 # ╟─e84a8519-c92b-4db2-9e8f-4553a04f1890
-# ╠═2b95079c-bb14-4c04-ba8f-63c23dd3c4ff
+# ╟─6c57d52d-f95d-47fa-ac11-7fe9a25187e9
+# ╟─f136b7f4-ad91-4631-8649-c04290106a0b
+# ╟─6114a022-4a23-4482-9261-2a77d40ce426
+# ╟─017a7aeb-96f2-4670-8aec-6579b5b60480
+# ╠═7f7b629f-db0b-4292-824d-b63675f05b84
+# ╠═7a8bf2fa-aa16-4e61-9074-849f0302e517
+# ╠═8a36cab8-46f0-4556-98ec-8cd706c3be6c

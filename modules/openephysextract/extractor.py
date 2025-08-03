@@ -94,7 +94,8 @@ class Extractor:
                 raw=raw,
                 preprocessed=None,
                 data=None,
-                location=folder
+                location=folder,
+                original_channels=self.channels
             )
             if self.notes:
                 session.add_notes(self.notes.get(fname, {}))
