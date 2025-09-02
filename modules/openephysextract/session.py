@@ -17,6 +17,7 @@ class Session:
     __slots__ = (
         'session', 'experiment', 'sampling_rate',
         'raw', 'preprocessed', 'data',
+        'raw_dimensions', 'preprocessed_dimensions', 'data_dimensions',
         'location', 'ch_names', 'montage',
         'notes', 'group', 'events', 'stats', 'history',
         'states', 'ica_model', 'ica_sources', 'bad_ics',
@@ -35,6 +36,9 @@ class Session:
         montage: Optional[np.ndarray] = None,
         location: Optional[str] = None,
         original_channels: Optional[List[int]] = None,
+        raw_dimensions: Optional[List[str]] = None,
+        preprocessed_dimensions: Optional[List[str]] = None,
+        data_dimensions: Optional[List[str]] = None,
     ):
         """
         Initialize a Session.
@@ -50,6 +54,9 @@ class Session:
             montage: Optional electrode positions as (n_channels, 3) array.
             location: Recording location descriptor.
             original_channels: Original channel indices from hardware (e.g., [3,4,5,6,7,8]).
+            raw_dimensions: Optional dimension labels for raw data (e.g., ["channels", "samples"]).
+            preprocessed_dimensions: Optional dimension labels for preprocessed data.
+            data_dimensions: Optional dimension labels for final data.
         """
         # Metadata
         self.session = session
@@ -68,6 +75,11 @@ class Session:
             if data is not None
             else None
         )
+
+        # Dimension labels for tracking data transformations (user-specified)
+        self.raw_dimensions = raw_dimensions
+        self.preprocessed_dimensions = preprocessed_dimensions
+        self.data_dimensions = data_dimensions
 
         # Recording params
         self.sampling_rate = sampling_rate
@@ -170,7 +182,10 @@ class Session:
             'history': self.history,
             'good_channels': self.good_channels,
             'original_channels': self.original_channels,
-            'bad_ics': self.bad_ics
+            'bad_ics': self.bad_ics,
+            'raw_dimensions': self.raw_dimensions,
+            'preprocessed_dimensions': self.preprocessed_dimensions,
+            'data_dimensions': self.data_dimensions
         }
 
     def to_hdf5(self, path: str) -> None:
@@ -213,6 +228,9 @@ class Session:
             ch_names=meta.get('ch_names'),
             montage=montage,
             location=meta.get('location'),
+            raw_dimensions=meta.get('raw_dimensions'),
+            preprocessed_dimensions=meta.get('preprocessed_dimensions'),
+            data_dimensions=meta.get('data_dimensions'),
         )
         sess.notes = meta.get('notes', {})
         sess.group = meta.get('group')

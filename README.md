@@ -1,6 +1,6 @@
 # Neuroelectrophysiology Framework 
 
-A comprehensive, polyglot toolkit for extracting, processing, and analyzing neuroelectrophysiology data from Open Ephys recordings. This repository provides both **Python** and **Julia** implementations for maximum flexibility and performance in neuroscience research workflows.
+A comprehensive, polyglot toolkit for extracting, processing, and analyzing neuroelectrophysiology data from Open Ephys recordings. This repository provides both **Python** and **Julia** implementations for maximum flexibility.
 
 ## Purpose
 
@@ -11,26 +11,6 @@ This framework is designed for:
 - **High-performance analysis** leveraging Julia's speed and Python's ecosystem
 - **Reproducible research** with version-controlled analysis pipelines
 
-## Architecture
-
-```
-neuroelectrophysiology/
-├── modules/
-│   ├── openephysextract/          # Python package for data extraction & processing
-│   │   ├── session.py             # Python Session class
-│   │   ├── preprocess.py          # Preprocessing pipeline (PyTorch accelerated)
-│   │   ├── analysis.py            # Spectral analysis tools
-│   │   ├── extractor.py           # Open Ephys data extraction
-│   │   └── pyproject.toml         # Python dependencies
-│   └── sessionIO/                 # Julia package for high-performance analysis
-│       ├── SessionIO.jl           # Julia Session struct
-│       └── testSessionIO.jl       # Julia tests
-├── data/                          # Shared experimental data (HDF5 format)
-├── notebooks/                     # Analysis notebooks (Jupyter & Pluto)
-├── scripts/                       # Utility scripts and converters
-└── Project.toml                   # Julia project configuration
-```
-
 ## Key Features
 
 ### Python Module (`openephysextract`)
@@ -39,7 +19,7 @@ neuroelectrophysiology/
 - **Advanced Preprocessing**: ASR, ICA, filtering, epoching, artifact rejection
 - **Interactive Visualization**: Dash-based web interface for data exploration
 
-### Julia Module (`SessionIO`)
+### Julia Module (`neuroephys4julia`)
 - **High-Performance Loading**: Optimized HDF5 reading with proper memory layout
 - **Type-Stable Operations**: Full type annotations for maximum Julia performance
 - **Cross-Language Compatibility**: Seamlessly loads Python-generated HDF5 files
@@ -111,19 +91,59 @@ session = preprocessor.apply(session)
 session.to_hdf5("processed_session.h5")
 ```
 
-### Cross-Language Workflow
+### Cross-Language Workflow (E.g)
 ```python
-# Python: Extract and preprocess
-session = extract_open_ephys_data("raw_recording/")
-session = preprocess_pipeline(session)
-session.to_hdf5("processed.h5")
+# Python: Extract
+extractor = Extractor(
+    source = source,
+    experiment = '5xFAD Resting State',
+    sampling_rate = 30000,
+    output = local_path,
+    notes = notes,
+    channels = [3, 4, 5, 6, 7, 8]
+)
+extracted = extractor.extractify()
+
+# Python: Preprocess
+preprocessor = Preprocessor(
+    steps=steps, # [RemoveBadStep(),FilterStep(),...,DownsampleStep()]
+    device='mps',
+    log=False,
+    verbose=False
+)
+preprocessed = preprocessor.preprocess(extracted)
+
+# Python: Export to HDF5
+for session in preprocessed:
+  session_name = session.session
+  outpath = f'{session_name}-preprocessed.h5')
+  session.to_hdf5(outpath))
+
 ```
 
 ```julia
 # Julia: Load and analyze
-session = from_hdf5("processed.h5")
-results = analyze_meps(session)
-save_results(results, "analysis_output.h5")
+session = from_hdf5("SESSION_NAME-preprocessed.h5")
+
+# raw plot
+plot_raw_eeg(session) 
+
+# spectrogram
+ts, freqs, power = myspectrogram(session)
+fig = plot_spectrogram(ts, freqs, power;
+    mode = :aggregate,
+    normalize_per_freq=true,
+    prange=(0.05, 0.95),
+    interpolate=true,
+    scale = :none,
+    show = false
+)
+fig
+
+# bandpower
+features = bandpower(session)
+scaled_features = logistic_scaler(features)
+
 ```
 
 ## Data Format Specification
