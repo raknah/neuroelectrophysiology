@@ -18,4 +18,5 @@ dist/
 /tmp/
 *.cache
 
-**/data/*
+# Shared prof repo (nested git repo)
+projects/EXELU/
