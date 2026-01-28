@@ -1,3 +1,6 @@
 [submodule "matlab_code_box"]
 	path = matlab_code_box
 	url = https://github.com/nperentos/matlab_code_box.git
+[submodule "projects/EXELU"]
+	path = projects/EXELU
+	url = https://github.com/nperentos/EXELU.git
